@@ -33,6 +33,7 @@ const PERSISTENT_NOTIFICATION_HEIGHT = 196;
 const PERSISTENT_NOTIFICATION_MARGIN = 16;
 const PERSISTENT_NOTIFICATION_GAP = 12;
 const CALENDAR_REMINDER_LEAD_MS = 15 * 60 * 1000;
+const CALENDAR_MISSED_REMINDER_GRACE_MS = 30 * 60 * 1000;
 const DEFAULT_CONFIG = {
   nocHost: '',
   nocPort: 8080,
@@ -587,7 +588,19 @@ function shouldSendCalendarReminder(snapshot = {}, previous = null, now = Date.n
   const startTime = new Date(snapshot.startTime).getTime();
   if (Number.isNaN(startTime)) return false;
   const timeUntilStart = startTime - now;
-  return timeUntilStart >= 0 && timeUntilStart <= CALENDAR_REMINDER_LEAD_MS;
+  const timeSinceStart = now - startTime;
+  return (
+    (timeUntilStart >= 0 && timeUntilStart <= CALENDAR_REMINDER_LEAD_MS) ||
+    (timeSinceStart >= 0 && timeSinceStart <= CALENDAR_MISSED_REMINDER_GRACE_MS)
+  );
+}
+
+function calendarReminderTitle(snapshot = {}, now = Date.now()) {
+  const startTime = new Date(snapshot.startTime).getTime();
+  if (!Number.isNaN(startTime) && startTime < now) {
+    return 'Promemoria calendario perso';
+  }
+  return 'Promemoria calendario';
 }
 
 function eventBody(snapshot) {
@@ -635,7 +648,7 @@ function processCalendarEvents(events = []) {
     }
 
     if (shouldSendCalendarReminder(snapshot, previous)) {
-      showCalendarNotification('Promemoria calendario', snapshot);
+      showCalendarNotification(calendarReminderTitle(snapshot), snapshot);
       emitted += 1;
       snapshot.reminderSent = true;
     } else {
