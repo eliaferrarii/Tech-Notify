@@ -251,6 +251,7 @@ function ticketSnapshot(ticket = {}, config = loadConfig()) {
     statusAgeLabel: ticket.statusAgeLabel || ticket.createdAgeLabel || '',
     webUrl: ticket.webUrl || '',
     assignedToMe: isTicketAssignedToTechnician(ticket, config.technicianName),
+    isUnassigned: Boolean(ticket.isUnassigned ?? !ticket.assigneeId),
   };
 }
 
@@ -417,6 +418,19 @@ function eventSnapshot(event = {}) {
   };
 }
 
+function hasCalendarEventChanged(previous = {}, snapshot = {}) {
+  return [
+    'title',
+    'calendarName',
+    'startLabel',
+    'startTime',
+    'endTime',
+    'location',
+    'status',
+    'webUrl',
+  ].some((field) => previous[field] !== snapshot[field]);
+}
+
 function eventBody(snapshot) {
   return [
     snapshot.startLabel || snapshot.startTime,
@@ -455,10 +469,7 @@ function processCalendarEvents(events = []) {
     if (!previous && hasBaseline) {
       showCalendarNotification(`Nuovo evento calendario: ${snapshot.title}`, snapshot);
       emitted += 1;
-    } else if (
-      previous &&
-      (previous.startTime !== snapshot.startTime || previous.status !== snapshot.status)
-    ) {
+    } else if (previous && hasCalendarEventChanged(previous, snapshot)) {
       showCalendarNotification(`Evento calendario aggiornato: ${snapshot.title}`, snapshot);
       emitted += 1;
     }
@@ -479,10 +490,11 @@ function processTickets(tickets = [], config = loadConfig()) {
   for (const ticket of tickets) {
     const snapshot = ticketSnapshot(ticket, config);
     if (!snapshot.id) continue;
-    if (!snapshot.assignedToMe) continue;
+    if (!snapshot.assignedToMe && !snapshot.isUnassigned) continue;
 
     const previous = lastSnapshot.get(snapshot.id);
     if (
+      snapshot.assignedToMe &&
       isTechnicianActionStatus(snapshot.status) &&
       ((previous && previous.status !== snapshot.status) || (!previous && hasBaseline))
     ) {
@@ -586,7 +598,7 @@ async function checkNotifications() {
       });
     }
 
-    const notificationTickets = assignedTickets(payload.tickets || [], config);
+    const notificationTickets = Array.isArray(payload.tickets) ? payload.tickets : [];
     const dashboardTickets = Array.isArray(dashboardPayload?.tickets) ? dashboardPayload.tickets : [];
     const dashboardAssignedTickets = assignedTickets(dashboardTickets, config);
     const ticketsToProcess = mergeTickets(notificationTickets, dashboardAssignedTickets);
