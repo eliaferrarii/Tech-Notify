@@ -738,7 +738,7 @@ function setupAutoUpdater() {
   autoUpdater.on('checking-for-update', () => sendUpdaterStatus('checking', 'Controllo aggiornamenti in corso...'));
   autoUpdater.on('update-available', (info) => {
     updateAvailable = true;
-    const message = `Aggiornamento ${info.version} disponibile. Scaricalo manualmente da GitHub.`;
+    const message = `Aggiornamento ${info.version} disponibile.`;
     sendUpdaterStatus('available', message, {
       version: info.version,
     });
