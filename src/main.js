@@ -156,7 +156,42 @@ function buildEndpoint(config) {
   return url.toString();
 }
 
-function ticketSnapshot(ticket = {}) {
+function normalizeName(value = '') {
+  return String(value || '').trim().toLowerCase();
+}
+
+function firstString(...values) {
+  const match = values.find((value) => typeof value === 'string' && value.trim());
+  return match ? match.trim() : '';
+}
+
+function isTicketAssignedToTechnician(ticket = {}, technicianName = '') {
+  if (ticket.isAssignedToTechnician || ticket.isAssignedToMe || ticket.isMine) return true;
+
+  const expectedName = normalizeName(technicianName);
+  if (!expectedName) return false;
+
+  const assignedName = normalizeName(firstString(
+    ticket.assigneeName,
+    ticket.assignedTo,
+    ticket.assignedToName,
+    ticket.ownerName,
+    ticket.technicianName,
+    ticket.agentName,
+    ticket.assignedTo?.name,
+    ticket.assignedTo?.fullName,
+    ticket.assignee?.name,
+    ticket.assignee?.fullName,
+    ticket.owner?.name,
+    ticket.owner?.fullName,
+    ticket.agent?.name,
+    ticket.agent?.fullName,
+  ));
+
+  return assignedName === expectedName;
+}
+
+function ticketSnapshot(ticket = {}, config = loadConfig()) {
   return {
     id: String(ticket.id || ticket.ticketNumber || ''),
     ticketNumber: String(ticket.ticketNumber || ''),
@@ -167,6 +202,7 @@ function ticketSnapshot(ticket = {}) {
     isCriticalByRule: Boolean(ticket.isCriticalByRule),
     statusAgeLabel: ticket.statusAgeLabel || ticket.createdAgeLabel || '',
     webUrl: ticket.webUrl || '',
+    assignedToMe: isTicketAssignedToTechnician(ticket, config.technicianName),
   };
 }
 
@@ -229,16 +265,19 @@ function showTicketNotification(title, snapshot) {
   });
 }
 
-function processTickets(tickets = []) {
+function processTickets(tickets = [], config = loadConfig()) {
   const nextSnapshot = new Map();
   let emitted = 0;
 
   for (const ticket of tickets) {
-    const snapshot = ticketSnapshot(ticket);
+    const snapshot = ticketSnapshot(ticket, config);
     if (!snapshot.id) continue;
 
     const previous = lastSnapshot.get(snapshot.id);
-    if (!previous) {
+    if (snapshot.assignedToMe && !previous?.assignedToMe) {
+      showTicketNotification(`Ticket assegnato a te #${snapshot.ticketNumber || snapshot.id}`, snapshot);
+      emitted += 1;
+    } else if (!previous) {
       showTicketNotification(`Nuovo ticket #${snapshot.ticketNumber || snapshot.id}`, snapshot);
       emitted += 1;
     } else if (previous.status !== snapshot.status) {
@@ -325,7 +364,7 @@ async function checkNotifications() {
       cache: 'no-store',
     });
     if (!response.ok) throw new Error(payload.message || `Errore HTTP ${response.status}`);
-    const emitted = processTickets(payload.tickets || []);
+    const emitted = processTickets(payload.tickets || [], config);
     markConnectionOk();
     addLog('info', emitted > 0 ? `${emitted} notifiche inviate` : 'Controllo completato senza nuove notifiche', {
       assigned: payload.summary?.assigned || 0,
