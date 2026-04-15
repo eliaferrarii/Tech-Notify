@@ -29,9 +29,10 @@ const NOC_REQUEST_TIMEOUT_MS = 12_000;
 const CONNECTION_ERROR_REPEAT_MS = 15 * 60 * 1000;
 const MAX_EVENT_LOG_ITEMS = 80;
 const PERSISTENT_NOTIFICATION_WIDTH = 380;
-const PERSISTENT_NOTIFICATION_HEIGHT = 172;
+const PERSISTENT_NOTIFICATION_HEIGHT = 196;
 const PERSISTENT_NOTIFICATION_MARGIN = 16;
 const PERSISTENT_NOTIFICATION_GAP = 12;
+const CALENDAR_REMINDER_LEAD_MS = 15 * 60 * 1000;
 const DEFAULT_CONFIG = {
   nocHost: '',
   nocPort: 8080,
@@ -254,8 +255,10 @@ function ticketSnapshot(ticket = {}, config = loadConfig()) {
     customerName: ticket.accountName || ticket.customerName || '',
     status: ticket.status || 'Sconosciuto',
     urgencyLabel: ticket.urgencyLabel || '',
+    priority: typeof ticket.priority === 'string' ? ticket.priority : '',
     isCriticalByRule: Boolean(ticket.isCriticalByRule),
     statusAgeLabel: ticket.statusAgeLabel || ticket.createdAgeLabel || '',
+    assigneeName: ticket.assigneeName || ticket.assignedToName || ticket.assignedTo?.name || '',
     webUrl: ticket.webUrl || '',
     assignedToMe: isTicketAssignedToTechnician(ticket, config.technicianName),
     isUnassigned: Boolean(ticket.isUnassigned ?? !ticket.assigneeId),
@@ -294,6 +297,14 @@ function isTechnicianActionStatus(status = '') {
   return normalized === 'risposto' || normalized === 'da pianificare';
 }
 
+function ticketNotificationTitle(type, snapshot = {}) {
+  const status = String(snapshot.status || '').trim();
+  if (type === 'new') return 'Nuovo ticket Deskz';
+  if (type === 'critical') return 'Ticket Deskz critico';
+  if (type === 'action' && status) return `Ticket Deskz ${status.toLowerCase()}`;
+  return 'Ticket Deskz aggiornato';
+}
+
 function buildEffectiveSummary(baseSummary = {}, dashboardPayload = null, notificationTickets = [], config = loadConfig()) {
   const dashboardTickets = Array.isArray(dashboardPayload?.tickets) ? dashboardPayload.tickets : [];
   const assignedSource = dashboardTickets.length > 0 ? dashboardTickets : notificationTickets;
@@ -308,10 +319,14 @@ function buildEffectiveSummary(baseSummary = {}, dashboardPayload = null, notifi
 
 function notificationBody(snapshot) {
   return [
+    snapshot.ticketNumber ? `#${snapshot.ticketNumber}` : '',
+    snapshot.subject,
     snapshot.customerName,
-    snapshot.status,
+    snapshot.status ? `Stato: ${snapshot.status}` : '',
+    snapshot.urgencyLabel ? `Urgenza: ${snapshot.urgencyLabel}` : '',
+    snapshot.assigneeName ? `Assegnato a: ${snapshot.assigneeName}` : (snapshot.isUnassigned ? 'Non assegnato' : ''),
     snapshot.statusAgeLabel ? `in stato da ${snapshot.statusAgeLabel}` : '',
-  ].filter(Boolean).join(' | ');
+  ].filter(Boolean).join(' - ');
 }
 
 function escapeXml(value = '') {
@@ -374,7 +389,7 @@ function closePersistentNotification(id) {
   }
 }
 
-function showPersistentNotification(title, body, onActivate = null) {
+function showPersistentNotification(title, body, onActivate = null, options = {}) {
   if (!app.isReady()) return false;
 
   const id = String(++notificationIdSequence);
@@ -408,7 +423,13 @@ function showPersistentNotification(title, body, onActivate = null) {
   notificationWindow.once('ready-to-show', () => {
     positionPersistentNotifications();
     notificationWindow.showInactive();
-    notificationWindow.webContents.send('notification:data', { id, title, body });
+    notificationWindow.webContents.send('notification:data', {
+      id,
+      title,
+      body,
+      actionLabel: options.actionLabel || 'Chiudi',
+      actionCloses: options.actionCloses !== false,
+    });
   });
 
   notificationWindow.on('closed', () => {
@@ -428,8 +449,8 @@ function showPersistentNotification(title, body, onActivate = null) {
   return true;
 }
 
-function showAppNotification(title, body, onClick = () => showMainWindow()) {
-  if (showPersistentNotification(title, body, onClick)) {
+function showAppNotification(title, body, onClick = () => showMainWindow(), options = {}) {
+  if (showPersistentNotification(title, body, onClick, options)) {
     return;
   }
 
@@ -517,12 +538,65 @@ function hasCalendarEventChanged(previous = {}, snapshot = {}) {
   ].some((field) => previous[field] !== snapshot[field]);
 }
 
+function formatCalendarDateTime(value = '') {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const eventDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const dayLabel = eventDay === today
+    ? 'Oggi'
+    : date.toLocaleDateString('it-IT', {
+        weekday: 'short',
+        day: '2-digit',
+        month: '2-digit',
+      });
+  const timeLabel = date.toLocaleTimeString('it-IT', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  return `${dayLabel} ${timeLabel}`;
+}
+
+function formatCalendarWhen(snapshot = {}) {
+  if (snapshot.startLabel) return snapshot.startLabel;
+
+  const start = formatCalendarDateTime(snapshot.startTime);
+  const end = formatCalendarDateTime(snapshot.endTime);
+  if (!start) return '';
+  if (!end) return start;
+
+  const startDay = new Date(snapshot.startTime).toDateString();
+  const endDate = new Date(snapshot.endTime);
+  if (!Number.isNaN(endDate.getTime()) && startDay === endDate.toDateString()) {
+    const endTime = endDate.toLocaleTimeString('it-IT', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    return `${start}-${endTime}`;
+  }
+
+  return `${start} - ${end}`;
+}
+
+function shouldSendCalendarReminder(snapshot = {}, previous = null, now = Date.now()) {
+  if (!snapshot.startTime || previous?.reminderSent) return false;
+  const startTime = new Date(snapshot.startTime).getTime();
+  if (Number.isNaN(startTime)) return false;
+  const timeUntilStart = startTime - now;
+  return timeUntilStart >= 0 && timeUntilStart <= CALENDAR_REMINDER_LEAD_MS;
+}
+
 function eventBody(snapshot) {
   return [
-    snapshot.startLabel || snapshot.startTime,
+    snapshot.title,
+    formatCalendarWhen(snapshot),
     snapshot.location,
     snapshot.calendarName,
-  ].filter(Boolean).join(' | ');
+  ].filter(Boolean).join(' - ');
 }
 
 function showCalendarNotification(title, snapshot) {
@@ -553,11 +627,19 @@ function processCalendarEvents(events = []) {
 
     const previous = lastCalendarSnapshot.get(snapshot.id);
     if (!previous && hasBaseline) {
-      showCalendarNotification(`Nuovo evento calendario: ${snapshot.title}`, snapshot);
+      showCalendarNotification('Nuovo evento calendario', snapshot);
       emitted += 1;
     } else if (previous && hasCalendarEventChanged(previous, snapshot)) {
-      showCalendarNotification(`Evento calendario aggiornato: ${snapshot.title}`, snapshot);
+      showCalendarNotification('Evento calendario aggiornato', snapshot);
       emitted += 1;
+    }
+
+    if (shouldSendCalendarReminder(snapshot, previous)) {
+      showCalendarNotification('Promemoria calendario', snapshot);
+      emitted += 1;
+      snapshot.reminderSent = true;
+    } else {
+      snapshot.reminderSent = Boolean(previous?.reminderSent);
     }
 
     nextSnapshot.set(snapshot.id, snapshot);
@@ -584,13 +666,13 @@ function processTickets(tickets = [], config = loadConfig()) {
       isTechnicianActionStatus(snapshot.status) &&
       ((previous && previous.status !== snapshot.status) || (!previous && hasBaseline))
     ) {
-      showTicketNotification(`Ticket #${snapshot.ticketNumber || snapshot.id} ${snapshot.status}`, snapshot);
+      showTicketNotification(ticketNotificationTitle('action', snapshot), snapshot);
       emitted += 1;
     } else if (!previous && hasBaseline) {
-      showTicketNotification(`Nuovo ticket #${snapshot.ticketNumber || snapshot.id}`, snapshot);
+      showTicketNotification(ticketNotificationTitle('new', snapshot), snapshot);
       emitted += 1;
     } else if (previous && !previous.isCriticalByRule && snapshot.isCriticalByRule) {
-      showTicketNotification(`Ticket #${snapshot.ticketNumber || snapshot.id} critico`, snapshot);
+      showTicketNotification(ticketNotificationTitle('critical', snapshot), snapshot);
       emitted += 1;
     }
 
@@ -851,7 +933,16 @@ function setupAutoUpdater() {
     sendUpdaterStatus('available', message, {
       version: info.version,
     });
-    showAppNotification('Aggiornamento Tech Notify disponibile', message);
+    showAppNotification(
+      'Aggiornamento Tech Notify disponibile',
+      message,
+      () => {
+        installAvailableUpdate().catch((error) => {
+          sendUpdaterStatus('error', `Errore aggiornamento: ${error.message || error}`);
+        });
+      },
+      { actionLabel: 'Aggiorna', actionCloses: false },
+    );
   });
   autoUpdater.on('update-not-available', () => {
     updateAvailable = false;
@@ -969,6 +1060,10 @@ ipcMain.handle('config:save', async (event, payload) => {
 ipcMain.handle('notifications:check-now', async () => checkNotifications());
 ipcMain.handle('window:show', async () => showMainWindow());
 ipcMain.handle('persistent-notification:activate', async (event, id) => {
+  const action = persistentNotificationActions.get(String(id));
+  if (typeof action === 'function') action();
+});
+ipcMain.handle('persistent-notification:action', async (event, id) => {
   const action = persistentNotificationActions.get(String(id));
   if (typeof action === 'function') action();
 });

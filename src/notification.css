@@ -69,7 +69,7 @@ strong {
   font-size: 13px;
   line-height: 1.35;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
 .close-button {
