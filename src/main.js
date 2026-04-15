@@ -11,6 +11,7 @@ let updaterIntervalTimer = null;
 let updaterConfigured = false;
 let updaterCheckInFlight = false;
 let updaterInstallInProgress = false;
+let updateAvailable = false;
 let isQuitting = false;
 let lastSnapshot = new Map();
 let lastConnectionState = 'unknown';
@@ -356,6 +357,22 @@ async function runAutoUpdaterCheck(reason = 'scheduled') {
   }
 }
 
+async function installAvailableUpdate() {
+  if (!app.isPackaged) {
+    throw new Error('Aggiornamento disponibile solo nella app installata.');
+  }
+  if (!updateAvailable) {
+    throw new Error('Nessun aggiornamento disponibile al momento.');
+  }
+  if (updaterInstallInProgress) {
+    return;
+  }
+
+  updaterInstallInProgress = true;
+  sendUpdaterStatus('downloading', 'Download aggiornamento in corso...', { percent: 0 });
+  await autoUpdater.downloadUpdate();
+}
+
 function scheduleAutoUpdaterPolling() {
   clearAutoUpdaterPolling();
   updaterInitialCheckTimer = setTimeout(() => {
@@ -384,17 +401,23 @@ function setupAutoUpdater() {
   }
 
   updaterConfigured = true;
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.autoRunAppAfterInstall = true;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.autoRunAppAfterInstall = false;
 
   autoUpdater.on('checking-for-update', () => sendUpdaterStatus('checking', 'Controllo aggiornamenti in corso...'));
   autoUpdater.on('update-available', (info) => {
-    sendUpdaterStatus('available', `Aggiornamento disponibile (${info.version}). Download in corso...`, {
+    updateAvailable = true;
+    const message = `Aggiornamento ${info.version} disponibile. Scaricalo manualmente da GitHub.`;
+    sendUpdaterStatus('available', message, {
       version: info.version,
     });
+    showAppNotification('Aggiornamento Tech Notify disponibile', message);
   });
-  autoUpdater.on('update-not-available', () => sendUpdaterStatus('up-to-date', 'Nessun aggiornamento disponibile.'));
+  autoUpdater.on('update-not-available', () => {
+    updateAvailable = false;
+    sendUpdaterStatus('up-to-date', 'Nessun aggiornamento disponibile.');
+  });
   autoUpdater.on('download-progress', (progressObj) => {
     sendUpdaterStatus('downloading', `Download aggiornamento: ${Math.round(progressObj.percent || 0)}%`, {
       percent: Math.round(progressObj.percent || 0),
@@ -404,9 +427,7 @@ function setupAutoUpdater() {
     });
   });
   autoUpdater.on('update-downloaded', (info) => {
-    if (updaterInstallInProgress) return;
-    updaterInstallInProgress = true;
-    sendUpdaterStatus('downloaded', `Aggiornamento ${info.version} pronto. Installazione al riavvio.`, {
+    sendUpdaterStatus('downloaded', `Aggiornamento ${info.version} pronto. Installazione in corso...`, {
       version: info.version,
       percent: 100,
     });
@@ -414,7 +435,7 @@ function setupAutoUpdater() {
     setTimeout(() => {
       isQuitting = true;
       autoUpdater.quitAndInstall(false, true);
-    }, 1800);
+    }, 1200);
   });
   autoUpdater.on('error', (error) => sendUpdaterStatus('error', `Errore aggiornamento: ${error.message || error}`));
 
@@ -505,4 +526,5 @@ ipcMain.handle('config:save', async (event, payload) => {
 
 ipcMain.handle('notifications:check-now', async () => checkNotifications());
 ipcMain.handle('window:show', async () => showMainWindow());
+ipcMain.handle('updater:install', async () => installAvailableUpdate());
 ipcMain.handle('log:get', async () => eventLog);

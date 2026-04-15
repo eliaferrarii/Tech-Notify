@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('techNotify', {
   getConfig: () => ipcRenderer.invoke('config:get'),
   saveConfig: (payload) => ipcRenderer.invoke('config:save', payload),
   checkNow: () => ipcRenderer.invoke('notifications:check-now'),
+  installUpdate: () => ipcRenderer.invoke('updater:install'),
   getLog: () => ipcRenderer.invoke('log:get'),
   showWindow: () => ipcRenderer.invoke('window:show'),
   onStatus: (callback) => {
