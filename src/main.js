@@ -15,12 +15,14 @@ let isQuitting = false;
 let lastSnapshot = new Map();
 let lastConnectionState = 'unknown';
 let lastConnectionErrorNotificationAt = 0;
+let eventLog = [];
 
 const APP_USER_MODEL_ID = 'com.mirkotagliente.technotify';
 const UPDATER_INITIAL_DELAY_MS = 5000;
 const UPDATER_POLL_INTERVAL_MS = 10 * 60 * 1000;
 const NOC_REQUEST_TIMEOUT_MS = 12_000;
 const CONNECTION_ERROR_REPEAT_MS = 15 * 60 * 1000;
+const MAX_EVENT_LOG_ITEMS = 80;
 const DEFAULT_CONFIG = {
   nocHost: '',
   nocPort: 8080,
@@ -40,6 +42,10 @@ function configFile() {
 
 function stateFile() {
   return path.join(app.getPath('userData'), 'technician-notification-state.json');
+}
+
+function logFile() {
+  return path.join(app.getPath('userData'), 'tech-notify-log.json');
 }
 
 function readJson(filePath, fallback) {
@@ -93,6 +99,34 @@ function saveSnapshot(snapshot) {
   writeJson(stateFile(), [...snapshot.values()]);
 }
 
+function loadEventLog() {
+  const items = readJson(logFile(), []);
+  eventLog = Array.isArray(items) ? items.slice(0, MAX_EVENT_LOG_ITEMS) : [];
+}
+
+function saveEventLog() {
+  writeJson(logFile(), eventLog.slice(0, MAX_EVENT_LOG_ITEMS));
+}
+
+function sendLog() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('log:updated', eventLog);
+  }
+}
+
+function addLog(level, message, details = {}) {
+  const item = {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    time: new Date().toISOString(),
+    level,
+    message,
+    details,
+  };
+  eventLog = [item, ...eventLog].slice(0, MAX_EVENT_LOG_ITEMS);
+  saveEventLog();
+  sendLog();
+}
+
 function sendStatus(payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('notifications:status', payload);
@@ -101,6 +135,9 @@ function sendStatus(payload) {
 
 function sendUpdaterStatus(status, message = '', extra = {}) {
   const payload = { status, message, ...extra };
+  if (status !== 'disabled' && status !== 'up-to-date') {
+    addLog(status === 'error' ? 'error' : 'info', message || `Aggiornamento: ${status}`, extra);
+  }
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('updater:status', payload);
   }
@@ -142,7 +179,13 @@ function notificationBody(snapshot) {
 function showAppNotification(title, body) {
   let shown = false;
   if (Notification.isSupported()) {
-    const notification = new Notification({ title, body, silent: false });
+    const notification = new Notification({
+      title,
+      body,
+      silent: false,
+      urgency: 'critical',
+      timeoutType: 'never',
+    });
     notification.on('click', () => showMainWindow());
     notification.show();
     shown = true;
@@ -154,6 +197,7 @@ function showAppNotification(title, body) {
 }
 
 function showTicketNotification(title, snapshot) {
+  addLog(snapshot.isCriticalByRule ? 'warning' : 'info', title, snapshot);
   showAppNotification(title, notificationBody(snapshot));
 }
 
@@ -194,11 +238,13 @@ function shouldNotifyConnectionError() {
 function notifyConnectionError(message) {
   if (!shouldNotifyConnectionError()) return;
   lastConnectionErrorNotificationAt = Date.now();
+  addLog('error', 'Errore connessione NOC', { message });
   showAppNotification('Tech Notify non comunica con il NOC', message);
 }
 
 function markConnectionOk() {
   if (lastConnectionState === 'error') {
+    addLog('info', 'Connessione NOC ripristinata');
     showAppNotification('Tech Notify ricollegato', 'Connessione con il PC NOC ripristinata.');
   }
   lastConnectionState = 'ok';
@@ -235,6 +281,7 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = NOC_REQUEST_T
 async function checkNotifications() {
   const config = loadConfig();
   if (!isConfigured(config)) {
+    addLog('warning', 'Configurazione incompleta');
     sendStatus({ status: 'missing-config', message: 'Completa la configurazione per avviare le notifiche.' });
     showMainWindow();
     return null;
@@ -252,6 +299,12 @@ async function checkNotifications() {
     if (!response.ok) throw new Error(payload.message || `Errore HTTP ${response.status}`);
     const emitted = processTickets(payload.tickets || []);
     markConnectionOk();
+    addLog('info', emitted > 0 ? `${emitted} notifiche inviate` : 'Controllo completato senza nuove notifiche', {
+      assigned: payload.summary?.assigned || 0,
+      unassignedNew: payload.summary?.unassignedNew || 0,
+      critical: payload.summary?.critical || 0,
+      stale: Boolean(payload.stale),
+    });
     sendStatus({
       status: 'ok',
       message: emitted > 0 ? `${emitted} notifiche inviate.` : 'Nessuna nuova notifica.',
@@ -420,6 +473,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   lastSnapshot = loadSnapshot();
+  loadEventLog();
   createTray();
   createWindow();
   if (!isConfigured(loadConfig())) showMainWindow();
@@ -439,6 +493,7 @@ app.on('window-all-closed', () => {});
 ipcMain.handle('config:get', async () => ({
   ...loadConfig(),
   configPath: configFile(),
+  log: eventLog,
 }));
 
 ipcMain.handle('config:save', async (event, payload) => {
@@ -450,3 +505,4 @@ ipcMain.handle('config:save', async (event, payload) => {
 
 ipcMain.handle('notifications:check-now', async () => checkNotifications());
 ipcMain.handle('window:show', async () => showMainWindow());
+ipcMain.handle('log:get', async () => eventLog);

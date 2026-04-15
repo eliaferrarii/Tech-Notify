@@ -57,6 +57,13 @@ h2 {
   font-size: 18px;
 }
 
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .status-pill {
   min-width: 116px;
   padding: 9px 12px;
@@ -184,6 +191,73 @@ button:disabled {
 
 .log-panel {
   margin-top: 16px;
+}
+
+.events-panel {
+  max-height: 300px;
+}
+
+.events-list {
+  display: grid;
+  gap: 8px;
+  max-height: 210px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.event-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid #d9e1ea;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.event-row.event-error {
+  border-color: #fecaca;
+  background: #fff5f5;
+}
+
+.event-row.event-warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.event-badge {
+  padding: 4px 7px;
+  border-radius: 8px;
+  background: #2f3a48;
+  color: #ffffff;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.event-error .event-badge {
+  background: #dc2626;
+}
+
+.event-warning .event-badge {
+  background: #b45309;
+}
+
+.event-content {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.event-content strong {
+  overflow-wrap: anywhere;
+}
+
+.event-time,
+.empty-log {
+  color: #6b7280;
+  font-size: 12px;
 }
 
 .hidden {

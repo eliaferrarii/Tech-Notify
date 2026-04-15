@@ -12,6 +12,7 @@ const updaterMessage = document.querySelector('#updaterMessage');
 const updaterProgress = document.querySelector('#updaterProgress');
 const updaterProgressFill = document.querySelector('#updaterProgressFill');
 const updaterProgressValue = document.querySelector('#updaterProgressValue');
+const eventsList = document.querySelector('#eventsList');
 
 const bridge = window.techNotify;
 
@@ -87,8 +88,50 @@ function renderUpdaterStatus(payload = {}) {
   updaterProgressValue.textContent = `${percent}%`;
 }
 
+function logLevelLabel(level) {
+  if (level === 'error') return 'Errore';
+  if (level === 'warning') return 'Avviso';
+  return 'Info';
+}
+
+function renderLog(items = []) {
+  eventsList.innerHTML = '';
+  if (!Array.isArray(items) || items.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-log';
+    empty.textContent = 'Nessun evento registrato.';
+    eventsList.appendChild(empty);
+    return;
+  }
+
+  for (const item of items.slice(0, 40)) {
+    const row = document.createElement('article');
+    row.className = `event-row event-${item.level || 'info'}`;
+
+    const badge = document.createElement('span');
+    badge.className = 'event-badge';
+    badge.textContent = logLevelLabel(item.level);
+
+    const content = document.createElement('div');
+    content.className = 'event-content';
+
+    const message = document.createElement('strong');
+    message.textContent = item.message || 'Evento';
+
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = item.time ? new Date(item.time).toLocaleString('it-IT') : '';
+
+    content.append(message, time);
+    row.append(badge, content);
+    eventsList.appendChild(row);
+  }
+}
+
 async function loadConfig() {
-  fillForm(await bridge.getConfig());
+  const config = await bridge.getConfig();
+  fillForm(config);
+  renderLog(config.log || await bridge.getLog());
 }
 
 async function saveConfig(event) {
@@ -120,6 +163,7 @@ configForm.addEventListener('submit', saveConfig);
 checkNowButton.addEventListener('click', checkNow);
 bridge.onStatus(renderStatus);
 bridge.onUpdaterStatus(renderUpdaterStatus);
+bridge.onLogUpdated(renderLog);
 loadConfig().catch((error) => {
   renderStatus({ status: 'error', message: error.message || 'Errore lettura configurazione.' });
 });

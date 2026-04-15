@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('techNotify', {
   getConfig: () => ipcRenderer.invoke('config:get'),
   saveConfig: (payload) => ipcRenderer.invoke('config:save', payload),
   checkNow: () => ipcRenderer.invoke('notifications:check-now'),
+  getLog: () => ipcRenderer.invoke('log:get'),
   showWindow: () => ipcRenderer.invoke('window:show'),
   onStatus: (callback) => {
     const listener = (event, payload) => callback(payload);
@@ -14,5 +15,10 @@ contextBridge.exposeInMainWorld('techNotify', {
     const listener = (event, payload) => callback(payload);
     ipcRenderer.on('updater:status', listener);
     return () => ipcRenderer.removeListener('updater:status', listener);
+  },
+  onLogUpdated: (callback) => {
+    const listener = (event, payload) => callback(payload);
+    ipcRenderer.on('log:updated', listener);
+    return () => ipcRenderer.removeListener('log:updated', listener);
   },
 });
