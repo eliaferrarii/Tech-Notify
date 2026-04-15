@@ -263,6 +263,41 @@ function notificationBody(snapshot) {
   ].filter(Boolean).join(' | ');
 }
 
+function escapeXml(value = '') {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function showWindowsProtocolNotification(title, body, url) {
+  if (process.platform !== 'win32' || !Notification.isSupported() || !url) return false;
+
+  const notification = new Notification({
+    silent: false,
+    toastXml: `
+      <toast activationType="protocol" launch="${escapeXml(url)}">
+        <visual>
+          <binding template="ToastGeneric">
+            <text>${escapeXml(title)}</text>
+            <text>${escapeXml(body)}</text>
+          </binding>
+        </visual>
+      </toast>
+    `,
+  });
+
+  notification.on('failed', (event = {}, error = '') => {
+    addLog('error', 'Errore notifica Windows', {
+      message: error || event.error || 'Toast XML non valida',
+    });
+  });
+  notification.show();
+  return true;
+}
+
 function showAppNotification(title, body, onClick = () => showMainWindow()) {
   let shown = false;
   if (Notification.isSupported()) {
@@ -304,6 +339,10 @@ function showAppNotification(title, body, onClick = () => showMainWindow()) {
 
 function showTicketNotification(title, snapshot) {
   addLog(snapshot.isCriticalByRule ? 'warning' : 'info', title, snapshot);
+  if (showWindowsProtocolNotification(title, notificationBody(snapshot), snapshot.webUrl)) {
+    return;
+  }
+
   showAppNotification(title, notificationBody(snapshot), () => {
     if (!snapshot.webUrl) {
       addLog('warning', 'Link ticket non disponibile', {
