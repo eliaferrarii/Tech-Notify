@@ -267,6 +267,7 @@ function showAppNotification(title, body, onClick = () => showMainWindow()) {
   let shown = false;
   if (Notification.isSupported()) {
     let closedByUserDismissal = false;
+    let clickTimer = null;
     const notification = new Notification({
       title,
       body,
@@ -274,16 +275,22 @@ function showAppNotification(title, body, onClick = () => showMainWindow()) {
       urgency: 'critical',
       timeoutType: 'never',
     });
-    notification.on('close', (event = {}) => {
-      if (event.reason === 'userCanceled') {
+    notification.on('close', (event = {}, reason = '') => {
+      const closeReason = reason || event.reason || '';
+      if (closeReason === 'userCanceled' || closeReason === 'closeButtonClicked') {
         closedByUserDismissal = true;
+        if (clickTimer) {
+          clearTimeout(clickTimer);
+          clickTimer = null;
+        }
       }
     });
     if (typeof onClick === 'function') {
       notification.on('click', () => {
-        setTimeout(() => {
+        clickTimer = setTimeout(() => {
+          clickTimer = null;
           if (!closedByUserDismissal) onClick();
-        }, 150);
+        }, 300);
       });
     }
     notification.show();
