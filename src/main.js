@@ -156,6 +156,11 @@ function buildEndpoint(config) {
   return url.toString();
 }
 
+function buildDashboardEndpoint(config) {
+  const host = config.nocHost.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  return `http://${host}:${config.nocPort}/api/dashboard`;
+}
+
 function normalizeName(value = '') {
   return String(value || '').trim().toLowerCase();
 }
@@ -203,6 +208,50 @@ function ticketSnapshot(ticket = {}, config = loadConfig()) {
     statusAgeLabel: ticket.statusAgeLabel || ticket.createdAgeLabel || '',
     webUrl: ticket.webUrl || '',
     assignedToMe: isTicketAssignedToTechnician(ticket, config.technicianName),
+  };
+}
+
+function ticketKey(ticket = {}) {
+  return String(ticket.id || ticket.ticketNumber || '');
+}
+
+function mergeTickets(...ticketLists) {
+  const merged = new Map();
+  for (const tickets of ticketLists) {
+    for (const ticket of tickets || []) {
+      const key = ticketKey(ticket);
+      if (!key) continue;
+      merged.set(key, {
+        ...(merged.get(key) || {}),
+        ...ticket,
+      });
+    }
+  }
+  return [...merged.values()];
+}
+
+function assignedTickets(tickets = [], config = loadConfig()) {
+  return tickets.filter((ticket) => isTicketAssignedToTechnician(ticket, config.technicianName));
+}
+
+function normalizeStatus(status = '') {
+  return String(status || '').trim().toLowerCase();
+}
+
+function isTechnicianActionStatus(status = '') {
+  const normalized = normalizeStatus(status);
+  return normalized === 'risposto' || normalized === 'da pianificare';
+}
+
+function buildEffectiveSummary(baseSummary = {}, dashboardPayload = null, notificationTickets = [], config = loadConfig()) {
+  const dashboardTickets = Array.isArray(dashboardPayload?.tickets) ? dashboardPayload.tickets : [];
+  const assignedSource = dashboardTickets.length > 0 ? dashboardTickets : notificationTickets;
+  const technicianTickets = assignedTickets(assignedSource, config);
+
+  return {
+    ...baseSummary,
+    assigned: technicianTickets.length,
+    critical: technicianTickets.filter((ticket) => ticket.isCriticalByRule).length,
   };
 }
 
@@ -267,23 +316,25 @@ function showTicketNotification(title, snapshot) {
 
 function processTickets(tickets = [], config = loadConfig()) {
   const nextSnapshot = new Map();
+  const hasBaseline = lastSnapshot.size > 0;
   let emitted = 0;
 
   for (const ticket of tickets) {
     const snapshot = ticketSnapshot(ticket, config);
     if (!snapshot.id) continue;
+    if (!snapshot.assignedToMe) continue;
 
     const previous = lastSnapshot.get(snapshot.id);
-    if (snapshot.assignedToMe && !previous?.assignedToMe) {
-      showTicketNotification(`Ticket assegnato a te #${snapshot.ticketNumber || snapshot.id}`, snapshot);
+    if (
+      isTechnicianActionStatus(snapshot.status) &&
+      ((previous && previous.status !== snapshot.status) || (!previous && hasBaseline))
+    ) {
+      showTicketNotification(`Ticket #${snapshot.ticketNumber || snapshot.id} ${snapshot.status}`, snapshot);
       emitted += 1;
-    } else if (!previous) {
+    } else if (!previous && hasBaseline) {
       showTicketNotification(`Nuovo ticket #${snapshot.ticketNumber || snapshot.id}`, snapshot);
       emitted += 1;
-    } else if (previous.status !== snapshot.status) {
-      showTicketNotification(`Ticket #${snapshot.ticketNumber || snapshot.id}: ${snapshot.status}`, snapshot);
-      emitted += 1;
-    } else if (!previous.isCriticalByRule && snapshot.isCriticalByRule) {
+    } else if (previous && !previous.isCriticalByRule && snapshot.isCriticalByRule) {
       showTicketNotification(`Ticket #${snapshot.ticketNumber || snapshot.id} critico`, snapshot);
       emitted += 1;
     }
@@ -364,23 +415,46 @@ async function checkNotifications() {
       cache: 'no-store',
     });
     if (!response.ok) throw new Error(payload.message || `Errore HTTP ${response.status}`);
-    const emitted = processTickets(payload.tickets || [], config);
+    let dashboardPayload = null;
+    try {
+      const dashboardResult = await fetchJsonWithTimeout(buildDashboardEndpoint(config), {
+        cache: 'no-store',
+      });
+      if (dashboardResult.response.ok) {
+        dashboardPayload = dashboardResult.payload;
+      }
+    } catch (error) {
+      addLog('warning', 'Dashboard NOC non disponibile per il conteggio ticket assegnati', {
+        message: error.message || String(error),
+      });
+    }
+
+    const notificationTickets = assignedTickets(payload.tickets || [], config);
+    const dashboardTickets = Array.isArray(dashboardPayload?.tickets) ? dashboardPayload.tickets : [];
+    const dashboardAssignedTickets = assignedTickets(dashboardTickets, config);
+    const ticketsToProcess = mergeTickets(notificationTickets, dashboardAssignedTickets);
+    const summary = buildEffectiveSummary(payload.summary || {}, dashboardPayload, ticketsToProcess, config);
+    const emitted = processTickets(ticketsToProcess, config);
     markConnectionOk();
     addLog('info', emitted > 0 ? `${emitted} notifiche inviate` : 'Controllo completato senza nuove notifiche', {
-      assigned: payload.summary?.assigned || 0,
-      unassignedNew: payload.summary?.unassignedNew || 0,
-      critical: payload.summary?.critical || 0,
+      assigned: summary.assigned || 0,
+      unassignedNew: summary.unassignedNew || 0,
+      critical: summary.critical || 0,
       stale: Boolean(payload.stale),
     });
     sendStatus({
       status: 'ok',
       message: emitted > 0 ? `${emitted} notifiche inviate.` : 'Nessuna nuova notifica.',
       checkedAt: new Date().toISOString(),
-      summary: payload.summary || {},
+      summary,
       stale: payload.stale,
       staleReason: payload.staleReason,
     });
-    return payload;
+    return {
+      ...payload,
+      tickets: ticketsToProcess,
+      summary,
+    };
   } catch (error) {
     const message = error.message || String(error);
     markConnectionError(message);
