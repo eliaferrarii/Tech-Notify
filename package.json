@@ -52,6 +52,7 @@
       "perMachine": false,
       "allowElevation": false,
       "allowToChangeInstallationDirectory": false,
+      "include": "build/installer.nsh",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Tech Notify",
