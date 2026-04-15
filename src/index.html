@@ -43,6 +43,10 @@
           <span>Critici</span>
           <strong id="criticalCount">0</strong>
         </div>
+        <div class="summary-item">
+          <span>Eventi calendario</span>
+          <strong id="calendarEventsCount">0</strong>
+        </div>
       </section>
 
       <form id="configForm" class="config-form">
@@ -69,6 +73,27 @@
         <label>
           <span>Controllo ogni secondi</span>
           <input type="number" name="pollIntervalSeconds" min="30" step="10" required>
+        </label>
+        <div class="form-section-title">Calendarioz</div>
+        <label class="checkbox-field">
+          <input type="checkbox" name="calendarEnabled">
+          <span>Leggi anche Calendarioz</span>
+        </label>
+        <label>
+          <span>IP Calendarioz</span>
+          <input type="text" name="calendarHost" placeholder="127.0.0.1">
+        </label>
+        <label>
+          <span>Porta Calendarioz</span>
+          <input type="number" name="calendarPort" min="1" max="65535">
+        </label>
+        <label>
+          <span>Username API Calendarioz</span>
+          <input type="text" name="calendarUsername" autocomplete="off">
+        </label>
+        <label>
+          <span>Password API Calendarioz</span>
+          <input type="password" name="calendarPassword" autocomplete="current-password">
         </label>
         <p class="config-path" id="configPath"></p>
         <div class="actions">

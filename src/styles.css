@@ -86,7 +86,7 @@ h2 {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
   margin: 16px 0;
 }
@@ -136,8 +136,30 @@ label {
 
 .wide,
 .actions,
-.config-path {
+.config-path,
+.form-section-title,
+.checkbox-field {
   grid-column: 1 / -1;
+}
+
+.form-section-title {
+  padding-top: 8px;
+  border-top: 1px solid #d9e1ea;
+  color: #0f766e;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.checkbox-field input {
+  width: auto;
+  min-height: auto;
 }
 
 input {

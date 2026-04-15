@@ -14,6 +14,7 @@ let updaterInstallInProgress = false;
 let updateAvailable = false;
 let isQuitting = false;
 let lastSnapshot = new Map();
+let lastCalendarSnapshot = new Map();
 let lastConnectionState = 'unknown';
 let lastConnectionErrorNotificationAt = 0;
 let eventLog = [];
@@ -31,6 +32,11 @@ const DEFAULT_CONFIG = {
   password: '',
   technicianName: '',
   pollIntervalSeconds: 60,
+  calendarEnabled: false,
+  calendarHost: '127.0.0.1',
+  calendarPort: 8090,
+  calendarUsername: '',
+  calendarPassword: '',
 };
 
 if (process.platform === 'win32') {
@@ -43,6 +49,10 @@ function configFile() {
 
 function stateFile() {
   return path.join(app.getPath('userData'), 'technician-notification-state.json');
+}
+
+function calendarStateFile() {
+  return path.join(app.getPath('userData'), 'calendar-notification-state.json');
 }
 
 function logFile() {
@@ -71,6 +81,11 @@ function normalizeConfig(payload = {}) {
     password: String(payload.password || ''),
     technicianName: String(payload.technicianName || '').trim(),
     pollIntervalSeconds: Math.max(30, Number(payload.pollIntervalSeconds || DEFAULT_CONFIG.pollIntervalSeconds)),
+    calendarEnabled: Boolean(payload.calendarEnabled),
+    calendarHost: String(payload.calendarHost || DEFAULT_CONFIG.calendarHost).trim(),
+    calendarPort: Number(payload.calendarPort || DEFAULT_CONFIG.calendarPort),
+    calendarUsername: String(payload.calendarUsername || '').trim(),
+    calendarPassword: String(payload.calendarPassword || ''),
   };
 }
 
@@ -98,6 +113,16 @@ function loadSnapshot() {
 
 function saveSnapshot(snapshot) {
   writeJson(stateFile(), [...snapshot.values()]);
+}
+
+function loadCalendarSnapshot() {
+  const items = readJson(calendarStateFile(), []);
+  if (!Array.isArray(items)) return new Map();
+  return new Map(items.filter((item) => item?.id).map((item) => [String(item.id), item]));
+}
+
+function saveCalendarSnapshot(snapshot) {
+  writeJson(calendarStateFile(), [...snapshot.values()]);
 }
 
 function loadEventLog() {
@@ -149,9 +174,27 @@ function isConfigured(config) {
   return Boolean(config.nocHost && config.nocPort && config.username && config.password && config.technicianName);
 }
 
+function isCalendarConfigured(config) {
+  return Boolean(
+    config.calendarEnabled &&
+    config.calendarHost &&
+    config.calendarPort &&
+    config.calendarUsername &&
+    config.calendarPassword &&
+    config.technicianName
+  );
+}
+
 function buildEndpoint(config) {
   const host = config.nocHost.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
   const url = new URL(`http://${host}:${config.nocPort}/api/technician-notifications`);
+  url.searchParams.set('technician', config.technicianName);
+  return url.toString();
+}
+
+function buildCalendarEndpoint(config) {
+  const host = config.calendarHost.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  const url = new URL(`http://${host}:${config.calendarPort}/api/technician-notifications`);
   url.searchParams.set('technician', config.technicianName);
   return url.toString();
 }
@@ -360,6 +403,74 @@ function showTicketNotification(title, snapshot) {
   });
 }
 
+function eventSnapshot(event = {}) {
+  return {
+    id: String(event.id || event.eventId || event.uid || event.calendarEventId || ''),
+    title: event.title || event.subject || event.summary || 'Evento calendario',
+    calendarName: event.calendarName || event.calendar || '',
+    startLabel: event.startLabel || event.whenLabel || event.timeLabel || '',
+    startTime: event.startTime || event.start || event.startsAt || event.startDateTime || '',
+    endTime: event.endTime || event.end || event.endsAt || event.endDateTime || '',
+    location: event.location || event.where || '',
+    status: event.status || '',
+    webUrl: event.webUrl || event.url || event.htmlLink || '',
+  };
+}
+
+function eventBody(snapshot) {
+  return [
+    snapshot.startLabel || snapshot.startTime,
+    snapshot.location,
+    snapshot.calendarName,
+  ].filter(Boolean).join(' | ');
+}
+
+function showCalendarNotification(title, snapshot) {
+  addLog('info', title, snapshot);
+  showAppNotification(title, eventBody(snapshot), () => {
+    if (snapshot.webUrl) {
+      shell.openExternal(snapshot.webUrl).catch((error) => {
+        addLog('error', 'Errore apertura evento calendario', {
+          message: error.message || String(error),
+          webUrl: snapshot.webUrl,
+        });
+      });
+      return;
+    }
+
+    showMainWindow();
+  });
+}
+
+function processCalendarEvents(events = []) {
+  const nextSnapshot = new Map();
+  const hasBaseline = lastCalendarSnapshot.size > 0;
+  let emitted = 0;
+
+  for (const event of events) {
+    const snapshot = eventSnapshot(event);
+    if (!snapshot.id) continue;
+
+    const previous = lastCalendarSnapshot.get(snapshot.id);
+    if (!previous && hasBaseline) {
+      showCalendarNotification(`Nuovo evento calendario: ${snapshot.title}`, snapshot);
+      emitted += 1;
+    } else if (
+      previous &&
+      (previous.startTime !== snapshot.startTime || previous.status !== snapshot.status)
+    ) {
+      showCalendarNotification(`Evento calendario aggiornato: ${snapshot.title}`, snapshot);
+      emitted += 1;
+    }
+
+    nextSnapshot.set(snapshot.id, snapshot);
+  }
+
+  lastCalendarSnapshot = nextSnapshot;
+  saveCalendarSnapshot(nextSnapshot);
+  return emitted;
+}
+
 function processTickets(tickets = [], config = loadConfig()) {
   const nextSnapshot = new Map();
   const hasBaseline = lastSnapshot.size > 0;
@@ -480,12 +591,44 @@ async function checkNotifications() {
     const dashboardAssignedTickets = assignedTickets(dashboardTickets, config);
     const ticketsToProcess = mergeTickets(notificationTickets, dashboardAssignedTickets);
     const summary = buildEffectiveSummary(payload.summary || {}, dashboardPayload, ticketsToProcess, config);
-    const emitted = processTickets(ticketsToProcess, config);
+    let emitted = processTickets(ticketsToProcess, config);
+    let calendarPayload = null;
+
+    if (isCalendarConfigured(config)) {
+      try {
+        const calendarResult = await fetchJsonWithTimeout(buildCalendarEndpoint(config), {
+          headers: {
+            Authorization: `Basic ${Buffer.from(`${config.calendarUsername}:${config.calendarPassword}`).toString('base64')}`,
+            Accept: 'application/json',
+          },
+          cache: 'no-store',
+        });
+        if (!calendarResult.response.ok) {
+          throw new Error(calendarResult.payload.message || `Errore HTTP ${calendarResult.response.status}`);
+        }
+
+        calendarPayload = calendarResult.payload;
+        const calendarEvents = Array.isArray(calendarPayload.events) ? calendarPayload.events : [];
+        emitted += processCalendarEvents(calendarEvents);
+        summary.calendarEvents = calendarEvents.length;
+        summary.calendarToday = calendarPayload.summary?.today || calendarPayload.summary?.todayEvents || 0;
+        summary.calendarUpcoming = calendarPayload.summary?.upcoming || calendarPayload.summary?.upcomingEvents || 0;
+      } catch (error) {
+        addLog('warning', 'Calendarioz non disponibile', {
+          message: error.message || String(error),
+        });
+        summary.calendarError = true;
+      }
+    } else {
+      summary.calendarEvents = 0;
+    }
+
     markConnectionOk();
     addLog('info', emitted > 0 ? `${emitted} notifiche inviate` : 'Controllo completato senza nuove notifiche', {
       assigned: summary.assigned || 0,
       unassignedNew: summary.unassignedNew || 0,
       critical: summary.critical || 0,
+      calendarEvents: summary.calendarEvents || 0,
       stale: Boolean(payload.stale),
     });
     sendStatus({
@@ -499,6 +642,7 @@ async function checkNotifications() {
     return {
       ...payload,
       tickets: ticketsToProcess,
+      calendar: calendarPayload,
       summary,
     };
   } catch (error) {

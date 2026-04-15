@@ -7,6 +7,7 @@ const checkedAt = document.querySelector('#checkedAt');
 const assignedCount = document.querySelector('#assignedCount');
 const unassignedNewCount = document.querySelector('#unassignedNewCount');
 const criticalCount = document.querySelector('#criticalCount');
+const calendarEventsCount = document.querySelector('#calendarEventsCount');
 const updaterPanel = document.querySelector('#updaterPanel');
 const updaterMessage = document.querySelector('#updaterMessage');
 const updaterProgress = document.querySelector('#updaterProgress');
@@ -25,6 +26,11 @@ function fillForm(config = {}) {
   configForm.elements.password.value = config.password || '';
   configForm.elements.technicianName.value = config.technicianName || '';
   configForm.elements.pollIntervalSeconds.value = config.pollIntervalSeconds || 60;
+  configForm.elements.calendarEnabled.checked = Boolean(config.calendarEnabled);
+  configForm.elements.calendarHost.value = config.calendarHost || '127.0.0.1';
+  configForm.elements.calendarPort.value = config.calendarPort || 8090;
+  configForm.elements.calendarUsername.value = config.calendarUsername || '';
+  configForm.elements.calendarPassword.value = config.calendarPassword || '';
   configPath.textContent = config.configPath ? `Configurazione: ${config.configPath}` : '';
 }
 
@@ -36,6 +42,11 @@ function formPayload() {
     password: configForm.elements.password.value,
     technicianName: configForm.elements.technicianName.value,
     pollIntervalSeconds: configForm.elements.pollIntervalSeconds.value,
+    calendarEnabled: configForm.elements.calendarEnabled.checked,
+    calendarHost: configForm.elements.calendarHost.value,
+    calendarPort: configForm.elements.calendarPort.value,
+    calendarUsername: configForm.elements.calendarUsername.value,
+    calendarPassword: configForm.elements.calendarPassword.value,
   };
 }
 
@@ -66,9 +77,13 @@ function renderStatus(payload = {}) {
   assignedCount.textContent = String(summary.assigned || 0);
   unassignedNewCount.textContent = String(summary.unassignedNew || 0);
   criticalCount.textContent = String(summary.critical || 0);
+  calendarEventsCount.textContent = String(summary.calendarEvents || 0);
 
   if (payload.stale && payload.staleReason) {
     statusMessage.textContent = `${statusMessage.textContent} Cache NOC: ${payload.staleReason}`;
+  }
+  if (summary.calendarError) {
+    statusMessage.textContent = `${statusMessage.textContent} Calendarioz non raggiungibile.`;
   }
 }
 
