@@ -954,7 +954,7 @@ function setupAutoUpdater() {
           sendUpdaterStatus('error', `Errore aggiornamento: ${error.message || error}`);
         });
       },
-      { actionLabel: 'Aggiorna', actionCloses: false },
+      { actionLabel: 'Aggiorna' },
     );
   });
   autoUpdater.on('update-not-available', () => {
@@ -1079,6 +1079,7 @@ ipcMain.handle('persistent-notification:activate', async (event, id) => {
 ipcMain.handle('persistent-notification:action', async (event, id) => {
   const action = persistentNotificationActions.get(String(id));
   if (typeof action === 'function') action();
+  closePersistentNotification(String(id));
 });
 ipcMain.handle('persistent-notification:close', async (event, id) => closePersistentNotification(String(id)));
 ipcMain.handle('updater:check-now', async () => runAutoUpdaterCheck('manual'));
