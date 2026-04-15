@@ -1,0 +1,70 @@
+{
+  "name": "tech-notify",
+  "version": "1.0.0",
+  "description": "App Windows per notifiche tecnici da Deskz NOC",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "build": "set CSC_IDENTITY_AUTO_DISCOVERY=false&& set CSC_LINK=&& set CSC_KEY_PASSWORD=&& electron-builder --win --publish never",
+    "package:release": "set CSC_IDENTITY_AUTO_DISCOVERY=false&& set CSC_LINK=&& set CSC_KEY_PASSWORD=&& electron-builder --win --publish always"
+  },
+  "keywords": [
+    "electron",
+    "deskz",
+    "notifications",
+    "technicians"
+  ],
+  "author": "Mirko Tagliente",
+  "license": "MIT",
+  "dependencies": {
+    "electron-updater": "^6.7.3"
+  },
+  "devDependencies": {
+    "electron": "^27.3.11",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.mirkotagliente.technotify",
+    "productName": "Tech Notify",
+    "directories": {
+      "output": "dist"
+    },
+    "forceCodeSigning": false,
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!*.log",
+      "!dist",
+      "!node_modules/.cache"
+    ],
+    "extraMetadata": {
+      "main": "src/main.js"
+    },
+    "win": {
+      "target": "nsis",
+      "verifyUpdateCodeSignature": false,
+      "signAndEditExecutable": false,
+      "artifactName": "${productName} Setup ${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Tech Notify",
+      "license": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "eliaferrarii",
+        "repo": "Tech-Notify",
+        "private": false,
+        "releaseType": "release"
+      }
+    ]
+  }
+}

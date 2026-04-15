@@ -1,0 +1,251 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", Arial, sans-serif;
+  background: #f5f7fa;
+  color: #1f2933;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #f5f7fa;
+}
+
+.app-shell {
+  width: min(100%, 720px);
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.status-band {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px;
+  background: #ffffff;
+  border: 1px solid #d9e1ea;
+  border-radius: 8px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 0;
+  font-size: 28px;
+}
+
+h2 {
+  margin-bottom: 12px;
+  font-size: 18px;
+}
+
+.status-pill {
+  min-width: 116px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: #f59e0b;
+  color: #1f2933;
+  text-align: center;
+  font-weight: 700;
+}
+
+.status-pill.ok {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.status-pill.error {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.summary-item,
+.config-form,
+.log-panel {
+  background: #ffffff;
+  border: 1px solid #d9e1ea;
+  border-radius: 8px;
+}
+
+.summary-item {
+  padding: 16px;
+}
+
+.summary-item span {
+  display: block;
+  margin-bottom: 8px;
+  color: #5d6978;
+  font-size: 13px;
+}
+
+.summary-item strong {
+  font-size: 28px;
+}
+
+.config-form,
+.log-panel {
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+}
+
+.config-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: #354150;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.wide,
+.actions,
+.config-path {
+  grid-column: 1 / -1;
+}
+
+input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #bcc8d6;
+  border-radius: 8px;
+  color: #1f2933;
+  font: inherit;
+}
+
+input:focus {
+  border-color: #0f766e;
+  outline: 2px solid rgba(15, 118, 110, 0.2);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+button {
+  min-height: 42px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: #0f766e;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #2f3a48;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.config-path,
+.muted {
+  color: #6b7280;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.log-panel {
+  margin-top: 16px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.updater-panel.error {
+  border-color: #fecaca;
+  background: #fff5f5;
+}
+
+.updater-progress {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.updater-progress-bar {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #d9e1ea;
+}
+
+.updater-progress-fill {
+  width: 0;
+  height: 100%;
+  border-radius: 8px;
+  background: #0f766e;
+  transition: width 0.2s ease;
+}
+
+#statusMessage {
+  margin-bottom: 8px;
+  line-height: 1.45;
+}
+
+@media (max-width: 560px) {
+  .app-shell {
+    padding: 14px;
+  }
+
+  .status-band,
+  .summary-grid,
+  .config-form {
+    grid-template-columns: 1fr;
+  }
+
+  .status-band {
+    display: grid;
+  }
+
+  .summary-grid {
+    display: grid;
+  }
+
+  .actions {
+    justify-content: stretch;
+  }
+
+  .actions button {
+    flex: 1;
+  }
+}

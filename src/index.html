@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tech Notify</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="status-band">
+        <div>
+          <p class="eyebrow">Tech Notify</p>
+          <h1>Notifiche Deskz</h1>
+        </div>
+        <div class="status-pill warning" id="statusPill">Da configurare</div>
+      </section>
+
+      <section class="summary-grid">
+        <div class="summary-item">
+          <span>Ticket assegnati</span>
+          <strong id="assignedCount">0</strong>
+        </div>
+        <div class="summary-item">
+          <span>Nuovi non assegnati</span>
+          <strong id="unassignedNewCount">0</strong>
+        </div>
+        <div class="summary-item">
+          <span>Critici</span>
+          <strong id="criticalCount">0</strong>
+        </div>
+      </section>
+
+      <form id="configForm" class="config-form">
+        <label>
+          <span>IP PC NOC</span>
+          <input type="text" name="nocHost" placeholder="192.168.1.10" required>
+        </label>
+        <label>
+          <span>Porta</span>
+          <input type="number" name="nocPort" min="1" max="65535" required>
+        </label>
+        <label>
+          <span>Username API</span>
+          <input type="text" name="username" autocomplete="off" required>
+        </label>
+        <label>
+          <span>Password API</span>
+          <input type="password" name="password" autocomplete="current-password" required>
+        </label>
+        <label class="wide">
+          <span>Nome tecnico in Zoho Desk</span>
+          <input type="text" name="technicianName" placeholder="Nome Cognome" required>
+        </label>
+        <label>
+          <span>Controllo ogni secondi</span>
+          <input type="number" name="pollIntervalSeconds" min="30" step="10" required>
+        </label>
+        <p class="config-path" id="configPath"></p>
+        <div class="actions">
+          <button type="submit">Salva</button>
+          <button type="button" class="secondary" id="checkNowButton">Controlla ora</button>
+        </div>
+      </form>
+
+      <section class="log-panel">
+        <h2>Stato collegamento</h2>
+        <p id="statusMessage">Configura il collegamento al PC NOC.</p>
+        <p class="muted" id="checkedAt"></p>
+      </section>
+
+      <section class="log-panel updater-panel hidden" id="updaterPanel">
+        <h2>Aggiornamento app</h2>
+        <p id="updaterMessage"></p>
+        <div class="updater-progress hidden" id="updaterProgress">
+          <div class="updater-progress-bar">
+            <div class="updater-progress-fill" id="updaterProgressFill"></div>
+          </div>
+          <span id="updaterProgressValue">0%</span>
+        </div>
+      </section>
+    </main>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

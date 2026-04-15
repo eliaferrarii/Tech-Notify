@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+*.log
+nul
+
+# Runtime/local config
+.env
+technician-config.json
+technician-notification-state.json
+
+# Local build cache
+*.tmp

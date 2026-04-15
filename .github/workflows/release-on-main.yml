@@ -1,0 +1,38 @@
+name: Release Windows App
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Set CI app version
+        shell: pwsh
+        run: |
+          $json = Get-Content package.json -Raw | ConvertFrom-Json
+          $json.version = "1.0.${{ github.run_number }}"
+          $json | ConvertTo-Json -Depth 100 | Set-Content package.json
+
+      - name: Build and publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run package:release
