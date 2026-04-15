@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Notification, Menu, Tray, ipcMain, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, Notification, Menu, Tray, ipcMain, nativeImage, screen, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -18,6 +18,9 @@ let lastCalendarSnapshot = new Map();
 let lastConnectionState = 'unknown';
 let lastConnectionErrorNotificationAt = 0;
 let eventLog = [];
+let notificationIdSequence = 0;
+const persistentNotifications = new Map();
+const persistentNotificationActions = new Map();
 
 const APP_USER_MODEL_ID = 'com.mirkotagliente.technotify';
 const UPDATER_INITIAL_DELAY_MS = 5000;
@@ -25,6 +28,10 @@ const UPDATER_POLL_INTERVAL_MS = 10 * 60 * 1000;
 const NOC_REQUEST_TIMEOUT_MS = 12_000;
 const CONNECTION_ERROR_REPEAT_MS = 15 * 60 * 1000;
 const MAX_EVENT_LOG_ITEMS = 80;
+const PERSISTENT_NOTIFICATION_WIDTH = 380;
+const PERSISTENT_NOTIFICATION_HEIGHT = 172;
+const PERSISTENT_NOTIFICATION_MARGIN = 16;
+const PERSISTENT_NOTIFICATION_GAP = 12;
 const DEFAULT_CONFIG = {
   nocHost: '',
   nocPort: 8080,
@@ -342,7 +349,90 @@ function showWindowsProtocolNotification(title, body, url) {
   return true;
 }
 
+function positionPersistentNotifications() {
+  const display = screen.getPrimaryDisplay();
+  const { x, y, width, height } = display.workArea;
+  const windows = [...persistentNotifications.values()].filter((notificationWindow) => !notificationWindow.isDestroyed());
+
+  windows.forEach((notificationWindow, index) => {
+    const windowX = x + width - PERSISTENT_NOTIFICATION_WIDTH - PERSISTENT_NOTIFICATION_MARGIN;
+    const windowY = y + height - PERSISTENT_NOTIFICATION_HEIGHT - PERSISTENT_NOTIFICATION_MARGIN
+      - (index * (PERSISTENT_NOTIFICATION_HEIGHT + PERSISTENT_NOTIFICATION_GAP));
+    notificationWindow.setBounds({
+      x: Math.max(x + PERSISTENT_NOTIFICATION_MARGIN, windowX),
+      y: Math.max(y + PERSISTENT_NOTIFICATION_MARGIN, windowY),
+      width: PERSISTENT_NOTIFICATION_WIDTH,
+      height: PERSISTENT_NOTIFICATION_HEIGHT,
+    });
+  });
+}
+
+function closePersistentNotification(id) {
+  const notificationWindow = persistentNotifications.get(id);
+  if (notificationWindow && !notificationWindow.isDestroyed()) {
+    notificationWindow.close();
+  }
+}
+
+function showPersistentNotification(title, body, onActivate = null) {
+  if (!app.isReady()) return false;
+
+  const id = String(++notificationIdSequence);
+  const notificationWindow = new BrowserWindow({
+    width: PERSISTENT_NOTIFICATION_WIDTH,
+    height: PERSISTENT_NOTIFICATION_HEIGHT,
+    minWidth: PERSISTENT_NOTIFICATION_WIDTH,
+    minHeight: PERSISTENT_NOTIFICATION_HEIGHT,
+    maxWidth: PERSISTENT_NOTIFICATION_WIDTH,
+    maxHeight: PERSISTENT_NOTIFICATION_HEIGHT,
+    show: false,
+    frame: false,
+    resizable: false,
+    movable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    backgroundColor: '#ffffff',
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'notification-preload.js'),
+    },
+  });
+
+  persistentNotifications.set(id, notificationWindow);
+  if (typeof onActivate === 'function') {
+    persistentNotificationActions.set(id, onActivate);
+  }
+
+  notificationWindow.once('ready-to-show', () => {
+    positionPersistentNotifications();
+    notificationWindow.showInactive();
+    notificationWindow.webContents.send('notification:data', { id, title, body });
+  });
+
+  notificationWindow.on('closed', () => {
+    persistentNotifications.delete(id);
+    persistentNotificationActions.delete(id);
+    positionPersistentNotifications();
+  });
+
+  notificationWindow.loadFile(path.join(__dirname, 'notification.html')).catch((error) => {
+    addLog('error', 'Errore apertura notifica persistente', {
+      message: error.message || String(error),
+    });
+    persistentNotifications.delete(id);
+    persistentNotificationActions.delete(id);
+  });
+
+  return true;
+}
+
 function showAppNotification(title, body, onClick = () => showMainWindow()) {
+  if (showPersistentNotification(title, body, onClick)) {
+    return;
+  }
+
   let shown = false;
   if (Notification.isSupported()) {
     let closedByUserDismissal = false;
@@ -383,10 +473,6 @@ function showAppNotification(title, body, onClick = () => showMainWindow()) {
 
 function showTicketNotification(title, snapshot) {
   addLog(snapshot.isCriticalByRule ? 'warning' : 'info', title, snapshot);
-  if (showWindowsProtocolNotification(title, notificationBody(snapshot), snapshot.webUrl)) {
-    return;
-  }
-
   showAppNotification(title, notificationBody(snapshot), () => {
     if (!snapshot.webUrl) {
       addLog('warning', 'Link ticket non disponibile', {
@@ -860,6 +946,9 @@ app.on('before-quit', () => {
   isQuitting = true;
   if (pollTimer) clearInterval(pollTimer);
   clearAutoUpdaterPolling();
+  for (const notificationWindow of persistentNotifications.values()) {
+    if (!notificationWindow.isDestroyed()) notificationWindow.close();
+  }
 });
 
 app.on('window-all-closed', () => {});
@@ -879,6 +968,11 @@ ipcMain.handle('config:save', async (event, payload) => {
 
 ipcMain.handle('notifications:check-now', async () => checkNotifications());
 ipcMain.handle('window:show', async () => showMainWindow());
+ipcMain.handle('persistent-notification:activate', async (event, id) => {
+  const action = persistentNotificationActions.get(String(id));
+  if (typeof action === 'function') action();
+});
+ipcMain.handle('persistent-notification:close', async (event, id) => closePersistentNotification(String(id)));
 ipcMain.handle('updater:check-now', async () => runAutoUpdaterCheck('manual'));
 ipcMain.handle('updater:install', async () => installAvailableUpdate());
 ipcMain.handle('log:get', async () => eventLog);
