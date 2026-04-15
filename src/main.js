@@ -181,6 +181,7 @@ function notificationBody(snapshot) {
 function showAppNotification(title, body, onClick = () => showMainWindow()) {
   let shown = false;
   if (Notification.isSupported()) {
+    let closedByUserDismissal = false;
     const notification = new Notification({
       title,
       body,
@@ -188,8 +189,17 @@ function showAppNotification(title, body, onClick = () => showMainWindow()) {
       urgency: 'critical',
       timeoutType: 'never',
     });
+    notification.on('close', (event = {}) => {
+      if (event.reason === 'userCanceled') {
+        closedByUserDismissal = true;
+      }
+    });
     if (typeof onClick === 'function') {
-      notification.on('click', onClick);
+      notification.on('click', () => {
+        setTimeout(() => {
+          if (!closedByUserDismissal) onClick();
+        }, 150);
+      });
     }
     notification.show();
     shown = true;
