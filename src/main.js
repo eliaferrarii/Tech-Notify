@@ -674,7 +674,18 @@ function clearAutoUpdaterPolling() {
 }
 
 async function runAutoUpdaterCheck(reason = 'scheduled') {
-  if (!app.isPackaged || updaterCheckInFlight) return;
+  if (!app.isPackaged) {
+    if (reason === 'manual') {
+      sendUpdaterStatus('disabled', 'Controllo aggiornamenti disponibile solo nella app installata.');
+    }
+    return;
+  }
+  if (updaterCheckInFlight) {
+    if (reason === 'manual') {
+      sendUpdaterStatus('checking', 'Controllo aggiornamenti gia in corso...');
+    }
+    return;
+  }
 
   updaterCheckInFlight = true;
   try {
@@ -856,5 +867,6 @@ ipcMain.handle('config:save', async (event, payload) => {
 
 ipcMain.handle('notifications:check-now', async () => checkNotifications());
 ipcMain.handle('window:show', async () => showMainWindow());
+ipcMain.handle('updater:check-now', async () => runAutoUpdaterCheck('manual'));
 ipcMain.handle('updater:install', async () => installAvailableUpdate());
 ipcMain.handle('log:get', async () => eventLog);

@@ -14,6 +14,7 @@ const updaterProgress = document.querySelector('#updaterProgress');
 const updaterProgressFill = document.querySelector('#updaterProgressFill');
 const updaterProgressValue = document.querySelector('#updaterProgressValue');
 const updaterActions = document.querySelector('#updaterActions');
+const checkUpdateButton = document.querySelector('#checkUpdateButton');
 const installUpdateButton = document.querySelector('#installUpdateButton');
 const eventsList = document.querySelector('#eventsList');
 
@@ -89,8 +90,8 @@ function renderStatus(payload = {}) {
 
 function renderUpdaterStatus(payload = {}) {
   const status = String(payload.status || '');
-  if (!status || status === 'disabled' || status === 'up-to-date') {
-    updaterPanel.classList.add('hidden');
+  if (!status) {
+    updaterMessage.textContent = 'Controllo aggiornamenti disponibile.';
     updaterActions.classList.add('hidden');
     return;
   }
@@ -105,6 +106,7 @@ function renderUpdaterStatus(payload = {}) {
   updaterProgressFill.style.width = `${percent}%`;
   updaterProgressValue.textContent = `${percent}%`;
   updaterActions.classList.toggle('hidden', status !== 'available');
+  checkUpdateButton.disabled = status === 'checking' || status === 'downloading' || status === 'downloaded';
   installUpdateButton.disabled = status !== 'available';
 }
 
@@ -191,8 +193,23 @@ async function installUpdate() {
   }
 }
 
+async function checkUpdateNow() {
+  checkUpdateButton.disabled = true;
+  try {
+    await bridge.checkUpdateNow();
+  } catch (error) {
+    renderUpdaterStatus({
+      status: 'error',
+      message: error.message || 'Errore controllo aggiornamenti.',
+    });
+  } finally {
+    checkUpdateButton.disabled = false;
+  }
+}
+
 configForm.addEventListener('submit', saveConfig);
 checkNowButton.addEventListener('click', checkNow);
+checkUpdateButton.addEventListener('click', checkUpdateNow);
 installUpdateButton.addEventListener('click', installUpdate);
 bridge.onStatus(renderStatus);
 bridge.onUpdaterStatus(renderUpdaterStatus);

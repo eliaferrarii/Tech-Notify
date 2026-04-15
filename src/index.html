@@ -16,7 +16,7 @@
         <div class="status-pill warning" id="statusPill">Da configurare</div>
       </section>
 
-      <section class="log-panel updater-panel hidden" id="updaterPanel">
+      <section class="log-panel updater-panel" id="updaterPanel">
         <h2>Aggiornamento app</h2>
         <p id="updaterMessage"></p>
         <div class="updater-progress hidden" id="updaterProgress">
@@ -24,6 +24,9 @@
             <div class="updater-progress-fill" id="updaterProgressFill"></div>
           </div>
           <span id="updaterProgressValue">0%</span>
+        </div>
+        <div class="actions">
+          <button type="button" class="secondary" id="checkUpdateButton">Controlla aggiornamenti</button>
         </div>
         <div class="actions updater-actions hidden" id="updaterActions">
           <button type="button" id="installUpdateButton">Aggiorna</button>
