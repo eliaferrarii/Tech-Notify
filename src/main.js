@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Notification, Menu, Tray, ipcMain, nativeImage } = require('electron');
+const { app, BrowserWindow, Notification, Menu, Tray, ipcMain, nativeImage, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -166,6 +166,7 @@ function ticketSnapshot(ticket = {}) {
     urgencyLabel: ticket.urgencyLabel || '',
     isCriticalByRule: Boolean(ticket.isCriticalByRule),
     statusAgeLabel: ticket.statusAgeLabel || ticket.createdAgeLabel || '',
+    webUrl: ticket.webUrl || '',
   };
 }
 
@@ -177,7 +178,7 @@ function notificationBody(snapshot) {
   ].filter(Boolean).join(' | ');
 }
 
-function showAppNotification(title, body) {
+function showAppNotification(title, body, onClick = () => showMainWindow()) {
   let shown = false;
   if (Notification.isSupported()) {
     const notification = new Notification({
@@ -187,7 +188,9 @@ function showAppNotification(title, body) {
       urgency: 'critical',
       timeoutType: 'never',
     });
-    notification.on('click', () => showMainWindow());
+    if (typeof onClick === 'function') {
+      notification.on('click', onClick);
+    }
     notification.show();
     shown = true;
   }
@@ -199,7 +202,21 @@ function showAppNotification(title, body) {
 
 function showTicketNotification(title, snapshot) {
   addLog(snapshot.isCriticalByRule ? 'warning' : 'info', title, snapshot);
-  showAppNotification(title, notificationBody(snapshot));
+  showAppNotification(title, notificationBody(snapshot), () => {
+    if (!snapshot.webUrl) {
+      addLog('warning', 'Link ticket non disponibile', {
+        ticketNumber: snapshot.ticketNumber || snapshot.id,
+      });
+      return;
+    }
+
+    shell.openExternal(snapshot.webUrl).catch((error) => {
+      addLog('error', 'Errore apertura link ticket', {
+        message: error.message || String(error),
+        webUrl: snapshot.webUrl,
+      });
+    });
+  });
 }
 
 function processTickets(tickets = []) {
