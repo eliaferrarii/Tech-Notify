@@ -21,6 +21,7 @@ const eventsList = document.querySelector('#eventsList');
 const bridge = window.techNotify;
 
 function fillForm(config = {}) {
+  configForm.elements.deskEnabled.checked = config.deskEnabled !== false;
   configForm.elements.nocHost.value = config.nocHost || '';
   configForm.elements.nocPort.value = config.nocPort || 8080;
   configForm.elements.username.value = config.username || '';
@@ -33,10 +34,12 @@ function fillForm(config = {}) {
   configForm.elements.calendarUsername.value = config.calendarUsername || '';
   configForm.elements.calendarPassword.value = config.calendarPassword || '';
   configPath.textContent = config.configPath ? `Configurazione: ${config.configPath}` : '';
+  syncSourceRequirements();
 }
 
 function formPayload() {
   return {
+    deskEnabled: configForm.elements.deskEnabled.checked,
     nocHost: configForm.elements.nocHost.value,
     nocPort: configForm.elements.nocPort.value,
     username: configForm.elements.username.value,
@@ -49,6 +52,20 @@ function formPayload() {
     calendarUsername: configForm.elements.calendarUsername.value,
     calendarPassword: configForm.elements.calendarPassword.value,
   };
+}
+
+function setRequired(names, required) {
+  for (const name of names) {
+    configForm.elements[name].required = required;
+  }
+}
+
+function syncSourceRequirements() {
+  setRequired(['nocHost', 'nocPort', 'username', 'password'], configForm.elements.deskEnabled.checked);
+  setRequired(
+    ['calendarHost', 'calendarPort', 'calendarUsername', 'calendarPassword'],
+    configForm.elements.calendarEnabled.checked
+  );
 }
 
 function setStatusTone(status) {
@@ -84,7 +101,7 @@ function renderStatus(payload = {}) {
     statusMessage.textContent = `${statusMessage.textContent} Cache server: ${payload.staleReason}`;
   }
   if (summary.calendarError) {
-    statusMessage.textContent = `${statusMessage.textContent} Calendarioz non raggiungibile.`;
+    statusMessage.textContent = `${statusMessage.textContent} Calendario non raggiungibile.`;
   }
 }
 
@@ -208,6 +225,8 @@ async function checkUpdateNow() {
 }
 
 configForm.addEventListener('submit', saveConfig);
+configForm.elements.deskEnabled.addEventListener('change', syncSourceRequirements);
+configForm.elements.calendarEnabled.addEventListener('change', syncSourceRequirements);
 checkNowButton.addEventListener('click', checkNow);
 checkUpdateButton.addEventListener('click', checkUpdateNow);
 installUpdateButton.addEventListener('click', installUpdate);

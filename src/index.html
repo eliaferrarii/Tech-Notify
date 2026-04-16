@@ -11,7 +11,7 @@
       <section class="status-band">
         <div>
           <p class="eyebrow">Tech Notify</p>
-          <h1>Notifiche Deskz</h1>
+          <h1>Notifiche Desk e Calendario</h1>
         </div>
         <div class="status-pill warning" id="statusPill">Da configurare</div>
       </section>
@@ -53,21 +53,26 @@
       </section>
 
       <form id="configForm" class="config-form">
+        <div class="form-section-title">Desk</div>
+        <label class="checkbox-field">
+          <input type="checkbox" name="deskEnabled">
+          <span>Leggi ticket Desk</span>
+        </label>
         <label>
           <span>IP server</span>
-          <input type="text" name="nocHost" placeholder="192.168.1.10" required>
+          <input type="text" name="nocHost" placeholder="192.168.1.10">
         </label>
         <label>
           <span>Porta</span>
-          <input type="number" name="nocPort" min="1" max="65535" required>
+          <input type="number" name="nocPort" min="1" max="65535">
         </label>
         <label>
           <span>Username API</span>
-          <input type="text" name="username" autocomplete="off" required>
+          <input type="text" name="username" autocomplete="off">
         </label>
         <label>
           <span>Password API</span>
-          <input type="password" name="password" autocomplete="current-password" required>
+          <input type="password" name="password" autocomplete="current-password">
         </label>
         <label class="wide">
           <span>Nome tecnico in Zoho Desk</span>
@@ -77,25 +82,25 @@
           <span>Controllo ogni secondi</span>
           <input type="number" name="pollIntervalSeconds" min="30" step="10" required>
         </label>
-        <div class="form-section-title">Calendarioz</div>
+        <div class="form-section-title">Calendario</div>
         <label class="checkbox-field">
           <input type="checkbox" name="calendarEnabled">
-          <span>Leggi anche Calendarioz</span>
+          <span>Leggi calendario</span>
         </label>
         <label>
-          <span>IP Calendarioz</span>
+          <span>IP Calendario</span>
           <input type="text" name="calendarHost" placeholder="127.0.0.1">
         </label>
         <label>
-          <span>Porta Calendarioz</span>
+          <span>Porta Calendario</span>
           <input type="number" name="calendarPort" min="1" max="65535">
         </label>
         <label>
-          <span>Username API Calendarioz</span>
+          <span>Username API Calendario</span>
           <input type="text" name="calendarUsername" autocomplete="off">
         </label>
         <label>
-          <span>Password API Calendarioz</span>
+          <span>Password API Calendario</span>
           <input type="password" name="calendarPassword" autocomplete="current-password">
         </label>
         <p class="config-path" id="configPath"></p>

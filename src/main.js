@@ -33,6 +33,7 @@ const PERSISTENT_NOTIFICATION_GAP = 12;
 const CALENDAR_REMINDER_LEAD_MS = 15 * 60 * 1000;
 const CALENDAR_MISSED_REMINDER_GRACE_MS = 30 * 60 * 1000;
 const DEFAULT_CONFIG = {
+  deskEnabled: true,
   nocHost: '',
   nocPort: 8080,
   username: '',
@@ -82,6 +83,7 @@ function writeJson(filePath, payload) {
 
 function normalizeConfig(payload = {}) {
   return {
+    deskEnabled: payload.deskEnabled !== false,
     nocHost: String(payload.nocHost || '').trim(),
     nocPort: Number(payload.nocPort || DEFAULT_CONFIG.nocPort),
     username: String(payload.username || '').trim(),
@@ -178,7 +180,18 @@ function sendUpdaterStatus(status, message = '', extra = {}) {
 }
 
 function isConfigured(config) {
-  return Boolean(config.nocHost && config.nocPort && config.username && config.password && config.technicianName);
+  return isDeskConfigured(config) || isCalendarConfigured(config);
+}
+
+function isDeskConfigured(config) {
+  return Boolean(
+    config.deskEnabled &&
+    config.nocHost &&
+    config.nocPort &&
+    config.username &&
+    config.password &&
+    config.technicianName
+  );
 }
 
 function isCalendarConfigured(config) {
@@ -298,10 +311,10 @@ function isTechnicianActionStatus(status = '') {
 
 function ticketNotificationTitle(type, snapshot = {}) {
   const status = String(snapshot.status || '').trim();
-  if (type === 'new') return 'Nuovo ticket Deskz';
-  if (type === 'critical') return 'Ticket Deskz critico';
-  if (type === 'action' && status) return `Ticket Deskz ${status.toLowerCase()}`;
-  return 'Ticket Deskz aggiornato';
+  if (type === 'new') return 'Nuovo ticket Desk';
+  if (type === 'critical') return 'Ticket Desk critico';
+  if (type === 'action' && status) return `Ticket Desk ${status.toLowerCase()}`;
+  return 'Ticket Desk aggiornato';
 }
 
 function buildEffectiveSummary(baseSummary = {}, dashboardPayload = null, notificationTickets = [], config = loadConfig()) {
@@ -745,42 +758,51 @@ async function checkNotifications() {
   const config = loadConfig();
   if (!isConfigured(config)) {
     addLog('warning', 'Configurazione incompleta');
-    sendStatus({ status: 'missing-config', message: 'Completa la configurazione per avviare le notifiche.' });
+    sendStatus({ status: 'missing-config', message: 'Abilita e configura Desk o Calendario per avviare le notifiche.' });
     showMainWindow();
     return null;
   }
 
-  const endpoint = buildEndpoint(config);
   try {
-    const { response, payload } = await fetchJsonWithTimeout(endpoint, {
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${config.username}:${config.password}`).toString('base64')}`,
-        Accept: 'application/json',
-      },
-      cache: 'no-store',
-    });
-    if (!response.ok) throw new Error(payload.message || `Errore HTTP ${response.status}`);
+    let payload = { summary: {} };
     let dashboardPayload = null;
-    try {
-      const dashboardResult = await fetchJsonWithTimeout(buildDashboardEndpoint(config), {
+    let ticketsToProcess = [];
+    let summary = buildEffectiveSummary({}, null, ticketsToProcess, config);
+    let emitted = 0;
+    let calendarPayload = null;
+
+    if (isDeskConfigured(config)) {
+      const endpoint = buildEndpoint(config);
+      const { response, payload: deskPayload } = await fetchJsonWithTimeout(endpoint, {
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${config.username}:${config.password}`).toString('base64')}`,
+          Accept: 'application/json',
+        },
         cache: 'no-store',
       });
-      if (dashboardResult.response.ok) {
-        dashboardPayload = dashboardResult.payload;
-      }
-    } catch (error) {
-      addLog('warning', 'Dashboard server non disponibile per il conteggio ticket assegnati', {
-        message: error.message || String(error),
-      });
-    }
+      if (!response.ok) throw new Error(deskPayload.message || `Errore HTTP ${response.status}`);
+      payload = deskPayload;
 
-    const notificationTickets = Array.isArray(payload.tickets) ? payload.tickets : [];
-    const dashboardTickets = Array.isArray(dashboardPayload?.tickets) ? dashboardPayload.tickets : [];
-    const dashboardAssignedTickets = assignedTickets(dashboardTickets, config);
-    const ticketsToProcess = mergeTickets(notificationTickets, dashboardAssignedTickets);
-    const summary = buildEffectiveSummary(payload.summary || {}, dashboardPayload, ticketsToProcess, config);
-    let emitted = processTickets(ticketsToProcess, config);
-    let calendarPayload = null;
+      try {
+        const dashboardResult = await fetchJsonWithTimeout(buildDashboardEndpoint(config), {
+          cache: 'no-store',
+        });
+        if (dashboardResult.response.ok) {
+          dashboardPayload = dashboardResult.payload;
+        }
+      } catch (error) {
+        addLog('warning', 'Dashboard server non disponibile per il conteggio ticket assegnati', {
+          message: error.message || String(error),
+        });
+      }
+
+      const notificationTickets = Array.isArray(payload.tickets) ? payload.tickets : [];
+      const dashboardTickets = Array.isArray(dashboardPayload?.tickets) ? dashboardPayload.tickets : [];
+      const dashboardAssignedTickets = assignedTickets(dashboardTickets, config);
+      ticketsToProcess = mergeTickets(notificationTickets, dashboardAssignedTickets);
+      summary = buildEffectiveSummary(payload.summary || {}, dashboardPayload, ticketsToProcess, config);
+      emitted = processTickets(ticketsToProcess, config);
+    }
 
     if (isCalendarConfigured(config)) {
       try {
@@ -802,10 +824,11 @@ async function checkNotifications() {
         summary.calendarToday = calendarPayload.summary?.today || calendarPayload.summary?.todayEvents || 0;
         summary.calendarUpcoming = calendarPayload.summary?.upcoming || calendarPayload.summary?.upcomingEvents || 0;
       } catch (error) {
-        addLog('warning', 'Calendarioz non disponibile', {
+        addLog('warning', 'Calendario non disponibile', {
           message: error.message || String(error),
         });
         summary.calendarError = true;
+        if (!isDeskConfigured(config)) throw error;
       }
     } else {
       summary.calendarEvents = 0;
