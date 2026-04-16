@@ -16,7 +16,6 @@ let isQuitting = false;
 let lastSnapshot = new Map();
 let lastCalendarSnapshot = new Map();
 let lastConnectionState = 'unknown';
-let lastConnectionErrorNotificationAt = 0;
 let eventLog = [];
 let notificationIdSequence = 0;
 const persistentNotifications = new Map();
@@ -26,7 +25,6 @@ const APP_USER_MODEL_ID = 'com.mirkotagliente.technotify';
 const UPDATER_INITIAL_DELAY_MS = 5000;
 const UPDATER_POLL_INTERVAL_MS = 10 * 60 * 1000;
 const NOC_REQUEST_TIMEOUT_MS = 12_000;
-const CONNECTION_ERROR_REPEAT_MS = 15 * 60 * 1000;
 const MAX_EVENT_LOG_ITEMS = 80;
 const PERSISTENT_NOTIFICATION_WIDTH = 380;
 const PERSISTENT_NOTIFICATION_HEIGHT = 196;
@@ -698,14 +696,11 @@ function processTickets(tickets = [], config = loadConfig()) {
 }
 
 function shouldNotifyConnectionError() {
-  const now = Date.now();
-  if (lastConnectionState !== 'error') return true;
-  return now - lastConnectionErrorNotificationAt >= CONNECTION_ERROR_REPEAT_MS;
+  return lastConnectionState !== 'error';
 }
 
 function notifyConnectionError(message) {
   if (!shouldNotifyConnectionError()) return;
-  lastConnectionErrorNotificationAt = Date.now();
   addLog('error', 'Errore connessione NOC', { message });
   showAppNotification('Tech Notify non comunica con il NOC', message);
 }
