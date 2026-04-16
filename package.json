@@ -1,7 +1,7 @@
 {
   "name": "tech-notify",
   "version": "1.0.0",
-  "description": "App Windows per notifiche tecnici da Deskz NOC",
+  "description": "App Windows per notifiche tecnici dal server Deskz",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",

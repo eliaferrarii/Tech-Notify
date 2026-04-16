@@ -701,14 +701,14 @@ function shouldNotifyConnectionError() {
 
 function notifyConnectionError(message) {
   if (!shouldNotifyConnectionError()) return;
-  addLog('error', 'Errore connessione NOC', { message });
-  showAppNotification('Tech Notify non comunica con il NOC', message);
+  addLog('error', 'Errore connessione server', { message });
+  showAppNotification('Tech Notify non comunica con il server', message);
 }
 
 function markConnectionOk() {
   if (lastConnectionState === 'error') {
-    addLog('info', 'Connessione NOC ripristinata');
-    showAppNotification('Tech Notify ricollegato', 'Connessione con il PC NOC ripristinata.');
+    addLog('info', 'Connessione server ripristinata');
+    showAppNotification('Tech Notify ricollegato', 'Connessione con il server ripristinata.');
   }
   lastConnectionState = 'ok';
 }
@@ -728,12 +728,12 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = NOC_REQUEST_T
     try {
       payload = text ? JSON.parse(text) : {};
     } catch {
-      payload = { message: text || `Risposta non valida dal NOC (${response.status})` };
+      payload = { message: text || `Risposta non valida dal server (${response.status})` };
     }
     return { response, payload };
   } catch (error) {
     if (error.name === 'AbortError') {
-      throw new Error(`PC NOC non raggiungibile entro ${Math.round(timeoutMs / 1000)} secondi.`);
+      throw new Error(`Server non raggiungibile entro ${Math.round(timeoutMs / 1000)} secondi.`);
     }
     throw error;
   } finally {
@@ -769,7 +769,7 @@ async function checkNotifications() {
         dashboardPayload = dashboardResult.payload;
       }
     } catch (error) {
-      addLog('warning', 'Dashboard NOC non disponibile per il conteggio ticket assegnati', {
+      addLog('warning', 'Dashboard server non disponibile per il conteggio ticket assegnati', {
         message: error.message || String(error),
       });
     }

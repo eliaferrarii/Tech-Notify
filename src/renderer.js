@@ -81,7 +81,7 @@ function renderStatus(payload = {}) {
   calendarEventsCount.textContent = String(summary.calendarEvents || 0);
 
   if (payload.stale && payload.staleReason) {
-    statusMessage.textContent = `${statusMessage.textContent} Cache NOC: ${payload.staleReason}`;
+    statusMessage.textContent = `${statusMessage.textContent} Cache server: ${payload.staleReason}`;
   }
   if (summary.calendarError) {
     statusMessage.textContent = `${statusMessage.textContent} Calendarioz non raggiungibile.`;
