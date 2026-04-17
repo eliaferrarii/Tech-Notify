@@ -128,7 +128,7 @@ function renderUpdaterStatus(payload = {}) {
   updaterPanel.classList.remove('hidden');
   updaterPanel.classList.toggle('error', status === 'error');
   updaterMessage.textContent = payload.message || 'Aggiornamento in corso.';
-  updaterReleaseNotes.textContent = payload.releaseNotes ? `Migliorie: ${payload.releaseNotes}` : '';
+  updaterReleaseNotes.textContent = payload.releaseNotes ? `Cambi inclusi:\n${payload.releaseNotes}` : '';
   updaterReleaseNotes.classList.toggle('hidden', !payload.releaseNotes);
 
   const showProgress = status === 'available' || status === 'downloading' || status === 'downloaded';

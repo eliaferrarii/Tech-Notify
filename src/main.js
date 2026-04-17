@@ -115,11 +115,18 @@ function loadConfig() {
 }
 
 function saveConfig(payload) {
-  const config = normalizeConfig(payload);
+  const previousConfig = loadConfig();
+  const config = normalizeConfig({
+    ...payload,
+    notificationSoundPath: Object.prototype.hasOwnProperty.call(payload, 'notificationSoundPath')
+      ? payload.notificationSoundPath
+      : previousConfig.notificationSoundPath,
+  });
   writeJson(configFile(), config);
   return {
     ...config,
     configPath: configFile(),
+    appVersion: app.getVersion(),
   };
 }
 
@@ -190,25 +197,42 @@ function sendUpdaterStatus(status, message = '', extra = {}) {
 
 function normalizeReleaseNotes(info = {}) {
   const rawNotes = Array.isArray(info.releaseNotes)
-    ? info.releaseNotes.map((item) => item?.note || item).join('\n')
+    ? info.releaseNotes.map((item) => item?.note || item).join('\n\n')
     : (info.releaseNotes || info.releaseName || '');
 
   return String(rawNotes || '')
+    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '\n- ')
+    .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]*>/g, ' ')
-    .replace(/[#*_`>~-]/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
     .replace(/\[(.*?)\]\(.*?\)/g, '$1')
-    .replace(/\r?\n+/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .split('\n')
     .map((line) => line.trim())
+    .map((line) => line
+      .replace(/^#{1,6}\s*/, '')
+      .replace(/^[-*+]\s*/, '- ')
+      .replace(/^\d+\.\s*/, '- ')
+      .replace(/\*\*/g, '')
+      .replace(/[`_]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim())
     .filter(Boolean)
-    .slice(0, 6)
+    .filter((line) => !/^full changelog:?/i.test(line))
+    .filter((line) => !/^what'?s changed:?$/i.test(line))
+    .slice(0, 10)
     .join('\n');
 }
 
 function updateNotificationBody(message = '', releaseNotes = '') {
   const notes = String(releaseNotes || '').trim();
   if (!notes) return message;
-  return `${message}\nMigliorie:\n${notes}`;
+  return `${message}\nCambi inclusi:\n${notes}`;
 }
 
 function isConfigured(config) {
