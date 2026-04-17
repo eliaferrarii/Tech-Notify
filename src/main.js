@@ -925,6 +925,13 @@ async function installAvailableUpdate() {
   await autoUpdater.downloadUpdate();
 }
 
+function startUpdateFromNotification() {
+  showMainWindow();
+  installAvailableUpdate().catch((error) => {
+    sendUpdaterStatus('error', `Errore aggiornamento: ${error.message || error}`);
+  });
+}
+
 function scheduleAutoUpdaterPolling() {
   clearAutoUpdaterPolling();
   updaterInitialCheckTimer = setTimeout(() => {
@@ -967,12 +974,8 @@ function setupAutoUpdater() {
     showAppNotification(
       'Aggiornamento Tech Notify disponibile',
       message,
-      () => {
-        installAvailableUpdate().catch((error) => {
-          sendUpdaterStatus('error', `Errore aggiornamento: ${error.message || error}`);
-        });
-      },
-      { actionLabel: 'Aggiorna' },
+      startUpdateFromNotification,
+      { actionLabel: 'Aggiorna', actionCloses: false },
     );
   });
   autoUpdater.on('update-not-available', () => {
@@ -1091,13 +1094,22 @@ ipcMain.handle('config:save', async (event, payload) => {
 ipcMain.handle('notifications:check-now', async () => checkNotifications());
 ipcMain.handle('window:show', async () => showMainWindow());
 ipcMain.handle('persistent-notification:activate', async (event, id) => {
-  const action = persistentNotificationActions.get(String(id));
-  if (typeof action === 'function') action();
+  const notificationId = String(id);
+  const action = persistentNotificationActions.get(notificationId);
+  try {
+    if (typeof action === 'function') action();
+  } finally {
+    closePersistentNotification(notificationId);
+  }
 });
 ipcMain.handle('persistent-notification:action', async (event, id) => {
-  const action = persistentNotificationActions.get(String(id));
-  if (typeof action === 'function') action();
-  closePersistentNotification(String(id));
+  const notificationId = String(id);
+  const action = persistentNotificationActions.get(notificationId);
+  try {
+    if (typeof action === 'function') action();
+  } finally {
+    closePersistentNotification(notificationId);
+  }
 });
 ipcMain.handle('persistent-notification:close', async (event, id) => closePersistentNotification(String(id)));
 ipcMain.handle('updater:check-now', async () => runAutoUpdaterCheck('manual'));
