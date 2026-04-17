@@ -1,7 +1,8 @@
-const { app, BrowserWindow, Notification, Menu, Tray, ipcMain, nativeImage, screen, shell } = require('electron');
+const { app, BrowserWindow, Notification, Menu, Tray, ipcMain, nativeImage, screen, shell, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 
 let mainWindow = null;
 let tray = null;
@@ -45,7 +46,10 @@ const DEFAULT_CONFIG = {
   calendarPort: 8090,
   calendarUsername: '',
   calendarPassword: '',
+  notificationSoundPath: '',
 };
+
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 if (process.platform === 'win32') {
   app.setAppUserModelId(APP_USER_MODEL_ID);
@@ -65,6 +69,10 @@ function calendarStateFile() {
 
 function logFile() {
   return path.join(app.getPath('userData'), 'tech-notify-log.json');
+}
+
+function importedNotificationSoundFile() {
+  return path.join(app.getPath('userData'), 'notification-sound.mp3');
 }
 
 function readJson(filePath, fallback) {
@@ -95,6 +103,7 @@ function normalizeConfig(payload = {}) {
     calendarPort: Number(payload.calendarPort || DEFAULT_CONFIG.calendarPort),
     calendarUsername: String(payload.calendarUsername || '').trim(),
     calendarPassword: String(payload.calendarPassword || ''),
+    notificationSoundPath: String(payload.notificationSoundPath || '').trim(),
   };
 }
 
@@ -179,6 +188,29 @@ function sendUpdaterStatus(status, message = '', extra = {}) {
   console.log(`[updater] ${status}${message ? `: ${message}` : ''}`);
 }
 
+function normalizeReleaseNotes(info = {}) {
+  const rawNotes = Array.isArray(info.releaseNotes)
+    ? info.releaseNotes.map((item) => item?.note || item).join('\n')
+    : (info.releaseNotes || info.releaseName || '');
+
+  return String(rawNotes || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/[#*_`>~-]/g, '')
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+    .replace(/\r?\n+/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .join('\n');
+}
+
+function updateNotificationBody(message = '', releaseNotes = '') {
+  const notes = String(releaseNotes || '').trim();
+  if (!notes) return message;
+  return `${message}\nMigliorie:\n${notes}`;
+}
+
 function isConfigured(config) {
   return isDeskConfigured(config) || isCalendarConfigured(config);
 }
@@ -260,10 +292,11 @@ function isTicketAssignedToTechnician(ticket = {}, technicianName = '') {
 }
 
 function ticketSnapshot(ticket = {}, config = loadConfig()) {
+  const ticketNumber = String(ticket.ticketNumber || ticket.number || ticket.code || ticket.id || '');
   return {
-    id: String(ticket.id || ticket.ticketNumber || ''),
-    ticketNumber: String(ticket.ticketNumber || ''),
-    subject: ticket.subject || 'Ticket Desk',
+    id: String(ticket.id || ticket.ticketNumber || ticket.number || ticket.code || ''),
+    ticketNumber,
+    subject: ticket.subject || ticket.title || ticket.object || 'Ticket Desk',
     customerName: ticket.accountName || ticket.customerName || '',
     status: ticket.status || 'Sconosciuto',
     urgencyLabel: ticket.urgencyLabel || '',
@@ -311,7 +344,11 @@ function isTechnicianActionStatus(status = '') {
 
 function ticketNotificationTitle(type, snapshot = {}) {
   const status = String(snapshot.status || '').trim();
-  if (type === 'new') return 'Nuovo ticket Desk';
+  if (type === 'new') {
+    const number = String(snapshot.ticketNumber || snapshot.id || '').trim();
+    const subject = String(snapshot.subject || '').trim();
+    return [number ? `#${number}` : '', subject].filter(Boolean).join(' - ') || 'Ticket Desk';
+  }
   if (type === 'critical') return 'Ticket Desk critico';
   if (type === 'action' && status) return `Ticket Desk ${status.toLowerCase()}`;
   return 'Ticket Desk aggiornato';
@@ -401,8 +438,15 @@ function closePersistentNotification(id) {
   }
 }
 
+function notificationSoundUrl(config = loadConfig()) {
+  const soundPath = String(config.notificationSoundPath || '').trim();
+  if (!soundPath || !fs.existsSync(soundPath)) return '';
+  return pathToFileURL(soundPath).toString();
+}
+
 function showPersistentNotification(title, body, onActivate = null, options = {}) {
   if (!app.isReady()) return false;
+  const config = options.config || loadConfig();
 
   const id = String(++notificationIdSequence);
   const notificationWindow = new BrowserWindow({
@@ -441,6 +485,8 @@ function showPersistentNotification(title, body, onActivate = null, options = {}
       body,
       actionLabel: options.actionLabel || 'Chiudi',
       actionCloses: options.actionCloses !== false,
+      variant: options.variant || '',
+      soundUrl: options.soundUrl ?? notificationSoundUrl(config),
     });
   });
 
@@ -462,7 +508,8 @@ function showPersistentNotification(title, body, onActivate = null, options = {}
 }
 
 function showAppNotification(title, body, onClick = () => showMainWindow(), options = {}) {
-  if (showPersistentNotification(title, body, onClick, options)) {
+  const config = options.config || loadConfig();
+  if (showPersistentNotification(title, body, onClick, { ...options, config })) {
     return;
   }
 
@@ -473,7 +520,7 @@ function showAppNotification(title, body, onClick = () => showMainWindow(), opti
     const notification = new Notification({
       title,
       body,
-      silent: false,
+      silent: Boolean(config.notificationSoundPath),
       urgency: 'critical',
       timeoutType: 'never',
     });
@@ -504,7 +551,32 @@ function showAppNotification(title, body, onClick = () => showMainWindow(), opti
   }
 }
 
-function showTicketNotification(title, snapshot) {
+function openExternalWebUrl(url = '', logContext = 'link') {
+  let parsedUrl = null;
+  try {
+    parsedUrl = new URL(String(url || '').trim());
+  } catch {
+    addLog('warning', `Link ${logContext} non valido`, { webUrl: url });
+    return;
+  }
+
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    addLog('warning', `Protocollo ${logContext} bloccato`, {
+      protocol: parsedUrl.protocol,
+      webUrl: url,
+    });
+    return;
+  }
+
+  shell.openExternal(parsedUrl.toString()).catch((error) => {
+    addLog('error', `Errore apertura ${logContext}`, {
+      message: error.message || String(error),
+      webUrl: parsedUrl.toString(),
+    });
+  });
+}
+
+function showTicketNotification(title, snapshot, options = {}) {
   addLog(snapshot.isCriticalByRule ? 'warning' : 'info', title, snapshot);
   showAppNotification(title, notificationBody(snapshot), () => {
     if (!snapshot.webUrl) {
@@ -514,13 +586,8 @@ function showTicketNotification(title, snapshot) {
       return;
     }
 
-    shell.openExternal(snapshot.webUrl).catch((error) => {
-      addLog('error', 'Errore apertura link ticket', {
-        message: error.message || String(error),
-        webUrl: snapshot.webUrl,
-      });
-    });
-  });
+    openExternalWebUrl(snapshot.webUrl, 'link ticket');
+  }, options);
 }
 
 function eventSnapshot(event = {}) {
@@ -627,12 +694,7 @@ function showCalendarNotification(title, snapshot) {
   addLog('info', title, snapshot);
   showAppNotification(title, eventBody(snapshot), () => {
     if (snapshot.webUrl) {
-      shell.openExternal(snapshot.webUrl).catch((error) => {
-        addLog('error', 'Errore apertura evento calendario', {
-          message: error.message || String(error),
-          webUrl: snapshot.webUrl,
-        });
-      });
+      openExternalWebUrl(snapshot.webUrl, 'evento calendario');
       return;
     }
 
@@ -696,7 +758,7 @@ function processTickets(tickets = [], config = loadConfig()) {
       showTicketNotification(ticketNotificationTitle('new', snapshot), snapshot);
       emitted += 1;
     } else if (previous && !previous.isCriticalByRule && snapshot.isCriticalByRule) {
-      showTicketNotification(ticketNotificationTitle('critical', snapshot), snapshot);
+      showTicketNotification(ticketNotificationTitle('critical', snapshot), snapshot, { variant: 'critical' });
       emitted += 1;
     }
 
@@ -968,12 +1030,14 @@ function setupAutoUpdater() {
   autoUpdater.on('update-available', (info) => {
     updateAvailable = true;
     const message = `Aggiornamento ${info.version} disponibile.`;
+    const releaseNotes = normalizeReleaseNotes(info);
     sendUpdaterStatus('available', message, {
       version: info.version,
+      releaseNotes,
     });
     showAppNotification(
       'Aggiornamento Tech Notify disponibile',
-      message,
+      updateNotificationBody(message, releaseNotes),
       startUpdateFromNotification,
       { actionLabel: 'Aggiorna', actionCloses: false },
     );
@@ -1081,8 +1145,45 @@ app.on('window-all-closed', () => {});
 ipcMain.handle('config:get', async () => ({
   ...loadConfig(),
   configPath: configFile(),
+  appVersion: app.getVersion(),
   log: eventLog,
 }));
+
+ipcMain.handle('notification-sound:import', async () => {
+  const result = await dialog.showOpenDialog(mainWindow || undefined, {
+    title: 'Scegli suono notifica',
+    properties: ['openFile'],
+    filters: [
+      { name: 'File MP3', extensions: ['mp3'] },
+    ],
+  });
+
+  if (result.canceled || !result.filePaths?.[0]) {
+    return {
+      ...loadConfig(),
+      configPath: configFile(),
+      appVersion: app.getVersion(),
+      imported: false,
+    };
+  }
+
+  const sourcePath = result.filePaths[0];
+  const destinationPath = importedNotificationSoundFile();
+  fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+  fs.copyFileSync(sourcePath, destinationPath);
+
+  const config = saveConfig({
+    ...loadConfig(),
+    notificationSoundPath: destinationPath,
+  });
+  addLog('info', 'Suono notifica importato', { notificationSoundPath: destinationPath });
+  return {
+    ...config,
+    configPath: configFile(),
+    appVersion: app.getVersion(),
+    imported: true,
+  };
+});
 
 ipcMain.handle('config:save', async (event, payload) => {
   const config = saveConfig(payload);
@@ -1092,6 +1193,9 @@ ipcMain.handle('config:save', async (event, payload) => {
 });
 
 ipcMain.handle('notifications:check-now', async () => checkNotifications());
+ipcMain.handle('notification-sound:test', async () => {
+  showAppNotification('Prova suono notifica', 'Se senti questo audio, il suono personalizzato e attivo.', () => showMainWindow());
+});
 ipcMain.handle('window:show', async () => showMainWindow());
 ipcMain.handle('persistent-notification:activate', async (event, id) => {
   const notificationId = String(id);

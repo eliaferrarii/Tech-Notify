@@ -52,6 +52,13 @@ h1 {
   font-size: 28px;
 }
 
+.app-version {
+  margin: 6px 0 0;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 h2 {
   margin-bottom: 12px;
   font-size: 18px;
@@ -177,10 +184,19 @@ input:focus {
   outline: 2px solid rgba(15, 118, 110, 0.2);
 }
 
+input[readonly] {
+  background: #f8fafc;
+  color: #5d6978;
+}
+
 .actions {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.sound-actions {
+  justify-content: flex-start;
 }
 
 button {
@@ -289,6 +305,13 @@ button:disabled {
 .updater-panel.error {
   border-color: #fecaca;
   background: #fff5f5;
+}
+
+.release-notes {
+  white-space: pre-line;
+  color: #354150;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .updater-progress {

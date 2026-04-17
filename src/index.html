@@ -12,6 +12,7 @@
         <div>
           <p class="eyebrow">Tech Notify</p>
           <h1>Notifiche Desk e Calendario</h1>
+          <p class="app-version" id="appVersion">Versione -</p>
         </div>
         <div class="status-pill warning" id="statusPill">Da configurare</div>
       </section>
@@ -19,6 +20,7 @@
       <section class="log-panel updater-panel" id="updaterPanel">
         <h2>Aggiornamento app</h2>
         <p id="updaterMessage"></p>
+        <p class="release-notes hidden" id="updaterReleaseNotes"></p>
         <div class="updater-progress hidden" id="updaterProgress">
           <div class="updater-progress-bar">
             <div class="updater-progress-fill" id="updaterProgressFill"></div>
@@ -103,6 +105,17 @@
           <span>Password API Calendario</span>
           <input type="password" name="calendarPassword" autocomplete="current-password">
         </label>
+        <div class="form-section-title">Notifiche</div>
+        <input type="hidden" name="notificationSoundPath">
+        <label class="wide">
+          <span>Suono notifica MP3</span>
+          <input type="text" id="notificationSoundPath" readonly placeholder="Nessun suono personalizzato">
+        </label>
+        <div class="actions sound-actions">
+          <button type="button" class="secondary" id="importSoundButton">Importa MP3</button>
+          <button type="button" class="secondary" id="removeSoundButton">Rimuovi suono</button>
+          <button type="button" id="testSoundButton">Prova suono</button>
+        </div>
         <p class="config-path" id="configPath"></p>
         <div class="actions">
           <button type="submit">Salva</button>

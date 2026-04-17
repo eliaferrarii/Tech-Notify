@@ -4,12 +4,14 @@ const checkNowButton = document.querySelector('#checkNowButton');
 const statusPill = document.querySelector('#statusPill');
 const statusMessage = document.querySelector('#statusMessage');
 const checkedAt = document.querySelector('#checkedAt');
+const appVersion = document.querySelector('#appVersion');
 const assignedCount = document.querySelector('#assignedCount');
 const unassignedNewCount = document.querySelector('#unassignedNewCount');
 const criticalCount = document.querySelector('#criticalCount');
 const calendarEventsCount = document.querySelector('#calendarEventsCount');
 const updaterPanel = document.querySelector('#updaterPanel');
 const updaterMessage = document.querySelector('#updaterMessage');
+const updaterReleaseNotes = document.querySelector('#updaterReleaseNotes');
 const updaterProgress = document.querySelector('#updaterProgress');
 const updaterProgressFill = document.querySelector('#updaterProgressFill');
 const updaterProgressValue = document.querySelector('#updaterProgressValue');
@@ -17,6 +19,10 @@ const updaterActions = document.querySelector('#updaterActions');
 const checkUpdateButton = document.querySelector('#checkUpdateButton');
 const installUpdateButton = document.querySelector('#installUpdateButton');
 const eventsList = document.querySelector('#eventsList');
+const notificationSoundPath = document.querySelector('#notificationSoundPath');
+const importSoundButton = document.querySelector('#importSoundButton');
+const removeSoundButton = document.querySelector('#removeSoundButton');
+const testSoundButton = document.querySelector('#testSoundButton');
 
 const bridge = window.techNotify;
 
@@ -33,6 +39,9 @@ function fillForm(config = {}) {
   configForm.elements.calendarPort.value = config.calendarPort || 8090;
   configForm.elements.calendarUsername.value = config.calendarUsername || '';
   configForm.elements.calendarPassword.value = config.calendarPassword || '';
+  configForm.elements.notificationSoundPath.value = config.notificationSoundPath || '';
+  notificationSoundPath.value = config.notificationSoundPath || '';
+  appVersion.textContent = config.appVersion ? `Versione ${config.appVersion}` : 'Versione -';
   configPath.textContent = config.configPath ? `Configurazione: ${config.configPath}` : '';
   syncSourceRequirements();
 }
@@ -51,6 +60,7 @@ function formPayload() {
     calendarPort: configForm.elements.calendarPort.value,
     calendarUsername: configForm.elements.calendarUsername.value,
     calendarPassword: configForm.elements.calendarPassword.value,
+    notificationSoundPath: configForm.elements.notificationSoundPath.value,
   };
 }
 
@@ -109,6 +119,8 @@ function renderUpdaterStatus(payload = {}) {
   const status = String(payload.status || '');
   if (!status) {
     updaterMessage.textContent = 'Controllo aggiornamenti disponibile.';
+    updaterReleaseNotes.classList.add('hidden');
+    updaterReleaseNotes.textContent = '';
     updaterActions.classList.add('hidden');
     return;
   }
@@ -116,6 +128,8 @@ function renderUpdaterStatus(payload = {}) {
   updaterPanel.classList.remove('hidden');
   updaterPanel.classList.toggle('error', status === 'error');
   updaterMessage.textContent = payload.message || 'Aggiornamento in corso.';
+  updaterReleaseNotes.textContent = payload.releaseNotes ? `Migliorie: ${payload.releaseNotes}` : '';
+  updaterReleaseNotes.classList.toggle('hidden', !payload.releaseNotes);
 
   const showProgress = status === 'available' || status === 'downloading' || status === 'downloaded';
   updaterProgress.classList.toggle('hidden', !showProgress);
@@ -224,12 +238,52 @@ async function checkUpdateNow() {
   }
 }
 
+async function importNotificationSound() {
+  importSoundButton.disabled = true;
+  try {
+    const saved = await bridge.importNotificationSound();
+    fillForm(saved);
+    if (saved.imported) {
+      renderStatus({ status: 'ok', message: 'Suono notifica importato.' });
+    }
+  } catch (error) {
+    renderStatus({ status: 'error', message: error.message || 'Errore importazione suono.' });
+  } finally {
+    importSoundButton.disabled = false;
+  }
+}
+
+async function removeNotificationSound() {
+  configForm.elements.notificationSoundPath.value = '';
+  notificationSoundPath.value = '';
+  const saved = await bridge.saveConfig(formPayload());
+  fillForm(saved);
+  renderStatus({ status: 'ok', message: 'Suono notifica rimosso.' });
+}
+
+async function testNotificationSound() {
+  if (!configForm.elements.notificationSoundPath.value) {
+    renderStatus({ status: 'error', message: 'Importa un file MP3 prima di provare il suono.' });
+    return;
+  }
+
+  testSoundButton.disabled = true;
+  try {
+    await bridge.testNotificationSound();
+  } finally {
+    testSoundButton.disabled = false;
+  }
+}
+
 configForm.addEventListener('submit', saveConfig);
 configForm.elements.deskEnabled.addEventListener('change', syncSourceRequirements);
 configForm.elements.calendarEnabled.addEventListener('change', syncSourceRequirements);
 checkNowButton.addEventListener('click', checkNow);
 checkUpdateButton.addEventListener('click', checkUpdateNow);
 installUpdateButton.addEventListener('click', installUpdate);
+importSoundButton.addEventListener('click', importNotificationSound);
+removeSoundButton.addEventListener('click', removeNotificationSound);
+testSoundButton.addEventListener('click', testNotificationSound);
 bridge.onStatus(renderStatus);
 bridge.onUpdaterStatus(renderUpdaterStatus);
 bridge.onLogUpdated(renderLog);

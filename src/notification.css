@@ -31,6 +31,22 @@ body {
   box-shadow: 0 18px 44px rgba(31, 41, 51, 0.22);
 }
 
+.notification-shell--critical {
+  border-color: #991b1b;
+  background: #b91c1c;
+  color: #ffffff;
+}
+
+.notification-shell--critical .eyebrow,
+.notification-shell--critical #notificationBody {
+  color: #fee2e2;
+}
+
+.notification-shell--critical .close-button {
+  background: #ffffff;
+  color: #991b1b;
+}
+
 .notification-content {
   display: grid;
   gap: 6px;
