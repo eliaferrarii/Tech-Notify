@@ -344,14 +344,14 @@ function isTechnicianActionStatus(status = '') {
 
 function ticketNotificationTitle(type, snapshot = {}) {
   const status = String(snapshot.status || '').trim();
-  if (type === 'new') {
-    const number = String(snapshot.ticketNumber || snapshot.id || '').trim();
-    const subject = String(snapshot.subject || '').trim();
-    return [number ? `#${number}` : '', subject].filter(Boolean).join(' - ') || 'Ticket Desk';
-  }
-  if (type === 'critical') return 'Ticket Desk critico';
-  if (type === 'action' && status) return `Ticket Desk ${status.toLowerCase()}`;
-  return 'Ticket Desk aggiornato';
+  const number = String(snapshot.ticketNumber || snapshot.id || '').trim();
+  const subject = String(snapshot.subject || '').trim();
+  const baseTitle = [number ? `#${number}` : '', subject].filter(Boolean).join(' - ') || 'Ticket Desk';
+
+  if (type === 'critical') return `${baseTitle} - Critico`;
+  if (type === 'action' && status) return `${baseTitle} - ${status}`;
+  if (type === 'new') return baseTitle;
+  return `${baseTitle} - Aggiornato`;
 }
 
 function buildEffectiveSummary(baseSummary = {}, dashboardPayload = null, notificationTickets = [], config = loadConfig()) {
