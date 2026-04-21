@@ -17,10 +17,15 @@ let isQuitting = false;
 let lastSnapshot = new Map();
 let lastCalendarSnapshot = new Map();
 let lastConnectionState = 'unknown';
+let lastConnectionErrorSignature = '';
 let eventLog = [];
 let notificationIdSequence = 0;
 const persistentNotifications = new Map();
 const persistentNotificationActions = new Map();
+const persistentNotificationEntries = new Map();
+const persistentNotificationTimers = new Map();
+const collapsedPersistentNotificationIds = [];
+let notificationBubbleWindow = null;
 
 const APP_USER_MODEL_ID = 'com.mirkotagliente.technotify';
 const UPDATER_INITIAL_DELAY_MS = 5000;
@@ -29,6 +34,8 @@ const NOC_REQUEST_TIMEOUT_MS = 12_000;
 const MAX_EVENT_LOG_ITEMS = 80;
 const PERSISTENT_NOTIFICATION_WIDTH = 380;
 const PERSISTENT_NOTIFICATION_HEIGHT = 196;
+const PERSISTENT_NOTIFICATION_VISIBLE_MS = 30_000;
+const PERSISTENT_NOTIFICATION_BUBBLE_SIZE = 64;
 const PERSISTENT_NOTIFICATION_MARGIN = 16;
 const PERSISTENT_NOTIFICATION_GAP = 12;
 const CALENDAR_REMINDER_LEAD_MS = 15 * 60 * 1000;
@@ -225,14 +232,16 @@ function normalizeReleaseNotes(info = {}) {
     .filter(Boolean)
     .filter((line) => !/^full changelog:?/i.test(line))
     .filter((line) => !/^what'?s changed:?$/i.test(line))
-    .slice(0, 10)
+    .slice(0, 25)
     .join('\n');
 }
 
 function updateNotificationBody(message = '', releaseNotes = '') {
   const notes = String(releaseNotes || '').trim();
-  if (!notes) return message;
-  return `${message}\nCambi inclusi:\n${notes}`;
+  if (!notes) {
+    return `${message}\nModifiche che verranno apportate: dettagli non forniti nelle note di rilascio.`;
+  }
+  return `${message}\nModifiche che verranno apportate:\n${notes}`;
 }
 
 function isConfigured(config) {
@@ -441,10 +450,22 @@ function positionPersistentNotifications() {
   const display = screen.getPrimaryDisplay();
   const { x, y, width, height } = display.workArea;
   const windows = [...persistentNotifications.values()].filter((notificationWindow) => !notificationWindow.isDestroyed());
+  const hasBubble = notificationBubbleWindow && !notificationBubbleWindow.isDestroyed();
+  const bubbleOffset = hasBubble ? PERSISTENT_NOTIFICATION_BUBBLE_SIZE + PERSISTENT_NOTIFICATION_GAP : 0;
+
+  if (hasBubble) {
+    notificationBubbleWindow.setBounds({
+      x: Math.max(x + PERSISTENT_NOTIFICATION_MARGIN, x + width - PERSISTENT_NOTIFICATION_BUBBLE_SIZE - PERSISTENT_NOTIFICATION_MARGIN),
+      y: Math.max(y + PERSISTENT_NOTIFICATION_MARGIN, y + height - PERSISTENT_NOTIFICATION_BUBBLE_SIZE - PERSISTENT_NOTIFICATION_MARGIN),
+      width: PERSISTENT_NOTIFICATION_BUBBLE_SIZE,
+      height: PERSISTENT_NOTIFICATION_BUBBLE_SIZE,
+    });
+  }
 
   windows.forEach((notificationWindow, index) => {
     const windowX = x + width - PERSISTENT_NOTIFICATION_WIDTH - PERSISTENT_NOTIFICATION_MARGIN;
     const windowY = y + height - PERSISTENT_NOTIFICATION_HEIGHT - PERSISTENT_NOTIFICATION_MARGIN
+      - bubbleOffset
       - (index * (PERSISTENT_NOTIFICATION_HEIGHT + PERSISTENT_NOTIFICATION_GAP));
     notificationWindow.setBounds({
       x: Math.max(x + PERSISTENT_NOTIFICATION_MARGIN, windowX),
@@ -455,11 +476,123 @@ function positionPersistentNotifications() {
   });
 }
 
-function closePersistentNotification(id) {
-  const notificationWindow = persistentNotifications.get(id);
+function clearPersistentNotificationTimer(id) {
+  const timer = persistentNotificationTimers.get(id);
+  if (timer) clearTimeout(timer);
+  persistentNotificationTimers.delete(id);
+}
+
+function removeCollapsedPersistentNotification(id) {
+  const index = collapsedPersistentNotificationIds.indexOf(id);
+  if (index !== -1) {
+    collapsedPersistentNotificationIds.splice(index, 1);
+  }
+}
+
+function updateNotificationBubble() {
+  const count = collapsedPersistentNotificationIds.length;
+  if (count < 1) {
+    if (notificationBubbleWindow && !notificationBubbleWindow.isDestroyed()) {
+      notificationBubbleWindow.close();
+    }
+    notificationBubbleWindow = null;
+    positionPersistentNotifications();
+    return;
+  }
+
+  if (!notificationBubbleWindow || notificationBubbleWindow.isDestroyed()) {
+    notificationBubbleWindow = new BrowserWindow({
+      width: PERSISTENT_NOTIFICATION_BUBBLE_SIZE,
+      height: PERSISTENT_NOTIFICATION_BUBBLE_SIZE,
+      minWidth: PERSISTENT_NOTIFICATION_BUBBLE_SIZE,
+      minHeight: PERSISTENT_NOTIFICATION_BUBBLE_SIZE,
+      maxWidth: PERSISTENT_NOTIFICATION_BUBBLE_SIZE,
+      maxHeight: PERSISTENT_NOTIFICATION_BUBBLE_SIZE,
+      show: false,
+      frame: false,
+      resizable: false,
+      movable: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      backgroundColor: '#00000000',
+      transparent: true,
+      autoHideMenuBar: true,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        preload: path.join(__dirname, 'notification-preload.js'),
+      },
+    });
+
+    notificationBubbleWindow.once('ready-to-show', () => {
+      if (collapsedPersistentNotificationIds.length < 1) {
+        if (notificationBubbleWindow && !notificationBubbleWindow.isDestroyed()) {
+          notificationBubbleWindow.close();
+        }
+        notificationBubbleWindow = null;
+        return;
+      }
+
+      positionPersistentNotifications();
+      notificationBubbleWindow.showInactive();
+      notificationBubbleWindow.webContents.send('notification:data', {
+        mode: 'bubble',
+        count: collapsedPersistentNotificationIds.length,
+      });
+    });
+
+    notificationBubbleWindow.on('closed', () => {
+      notificationBubbleWindow = null;
+      positionPersistentNotifications();
+    });
+
+    notificationBubbleWindow.loadFile(path.join(__dirname, 'notification.html')).catch((error) => {
+      addLog('error', 'Errore apertura cerchio notifiche', {
+        message: error.message || String(error),
+      });
+      notificationBubbleWindow = null;
+    });
+    return;
+  }
+
+  notificationBubbleWindow.webContents.send('notification:data', {
+    mode: 'bubble',
+    count,
+  });
+  positionPersistentNotifications();
+}
+
+function collapsePersistentNotification(id) {
+  const notificationId = String(id);
+  const entry = persistentNotificationEntries.get(notificationId);
+  if (!entry) return;
+
+  clearPersistentNotificationTimer(notificationId);
+  if (!collapsedPersistentNotificationIds.includes(notificationId)) {
+    collapsedPersistentNotificationIds.push(notificationId);
+  }
+
+  const notificationWindow = persistentNotifications.get(notificationId);
   if (notificationWindow && !notificationWindow.isDestroyed()) {
     notificationWindow.close();
   }
+
+  updateNotificationBubble();
+}
+
+function closePersistentNotification(id) {
+  const notificationId = String(id);
+  clearPersistentNotificationTimer(notificationId);
+  removeCollapsedPersistentNotification(notificationId);
+  persistentNotificationEntries.delete(notificationId);
+  persistentNotificationActions.delete(notificationId);
+
+  const notificationWindow = persistentNotifications.get(notificationId);
+  if (notificationWindow && !notificationWindow.isDestroyed()) {
+    notificationWindow.close();
+  }
+
+  updateNotificationBubble();
 }
 
 function notificationSoundUrl(config = loadConfig()) {
@@ -468,11 +601,7 @@ function notificationSoundUrl(config = loadConfig()) {
   return pathToFileURL(soundPath).toString();
 }
 
-function showPersistentNotification(title, body, onActivate = null, options = {}) {
-  if (!app.isReady()) return false;
-  const config = options.config || loadConfig();
-
-  const id = String(++notificationIdSequence);
+function createPersistentNotificationWindow(entry, options = {}) {
   const notificationWindow = new BrowserWindow({
     width: PERSISTENT_NOTIFICATION_WIDTH,
     height: PERSISTENT_NOTIFICATION_HEIGHT,
@@ -495,28 +624,29 @@ function showPersistentNotification(title, body, onActivate = null, options = {}
     },
   });
 
-  persistentNotifications.set(id, notificationWindow);
-  if (typeof onActivate === 'function') {
-    persistentNotificationActions.set(id, onActivate);
-  }
+  persistentNotifications.set(entry.id, notificationWindow);
 
   notificationWindow.once('ready-to-show', () => {
     positionPersistentNotifications();
     notificationWindow.showInactive();
     notificationWindow.webContents.send('notification:data', {
-      id,
-      title,
-      body,
-      actionLabel: options.actionLabel || 'Chiudi',
-      actionCloses: options.actionCloses !== false,
-      variant: options.variant || '',
-      soundUrl: options.soundUrl ?? notificationSoundUrl(config),
+      id: entry.id,
+      title: entry.title,
+      body: entry.body,
+      actionLabel: entry.actionLabel,
+      actionCloses: entry.actionCloses,
+      variant: entry.variant,
+      soundUrl: options.playSound ? entry.soundUrl : '',
     });
+
+    clearPersistentNotificationTimer(entry.id);
+    persistentNotificationTimers.set(entry.id, setTimeout(() => {
+      collapsePersistentNotification(entry.id);
+    }, PERSISTENT_NOTIFICATION_VISIBLE_MS));
   });
 
   notificationWindow.on('closed', () => {
-    persistentNotifications.delete(id);
-    persistentNotificationActions.delete(id);
+    persistentNotifications.delete(entry.id);
     positionPersistentNotifications();
   });
 
@@ -524,10 +654,57 @@ function showPersistentNotification(title, body, onActivate = null, options = {}
     addLog('error', 'Errore apertura notifica persistente', {
       message: error.message || String(error),
     });
-    persistentNotifications.delete(id);
-    persistentNotificationActions.delete(id);
+    closePersistentNotification(entry.id);
   });
 
+  return notificationWindow;
+}
+
+function expandCollapsedPersistentNotifications() {
+  const idsToOpen = collapsedPersistentNotificationIds.splice(0);
+  updateNotificationBubble();
+
+  idsToOpen.forEach((id) => {
+    const entry = persistentNotificationEntries.get(id);
+    if (!entry || persistentNotifications.has(id)) return;
+    createPersistentNotificationWindow(entry, { playSound: false });
+  });
+}
+
+function closeAllPersistentNotifications() {
+  const ids = new Set([
+    ...persistentNotificationEntries.keys(),
+    ...persistentNotifications.keys(),
+    ...collapsedPersistentNotificationIds,
+  ]);
+
+  ids.forEach((id) => closePersistentNotification(id));
+
+  if (notificationBubbleWindow && !notificationBubbleWindow.isDestroyed()) {
+    notificationBubbleWindow.close();
+  }
+}
+
+function showPersistentNotification(title, body, onActivate = null, options = {}) {
+  if (!app.isReady()) return false;
+  const config = options.config || loadConfig();
+  const id = String(++notificationIdSequence);
+  const entry = {
+    id,
+    title,
+    body,
+    actionLabel: options.actionLabel || 'Chiudi',
+    actionCloses: options.actionCloses !== false,
+    variant: options.variant || '',
+    soundUrl: options.soundUrl ?? notificationSoundUrl(config),
+  };
+
+  persistentNotificationEntries.set(id, entry);
+  if (typeof onActivate === 'function') {
+    persistentNotificationActions.set(id, onActivate);
+  }
+
+  createPersistentNotificationWindow(entry, { playSound: true });
   return true;
 }
 
@@ -794,12 +971,38 @@ function processTickets(tickets = [], config = loadConfig()) {
   return emitted;
 }
 
-function shouldNotifyConnectionError() {
-  return lastConnectionState !== 'error';
+function normalizeConnectionErrors(errors = []) {
+  return (Array.isArray(errors) ? errors : [{ service: 'Server', message: String(errors || '') }])
+    .map((error) => ({
+      service: String(error.service || 'Server').trim(),
+      message: String(error.message || error || 'Server non raggiungibile.').trim(),
+    }))
+    .filter((error) => error.message);
 }
 
-function notifyConnectionError(message) {
-  if (!shouldNotifyConnectionError()) return;
+function connectionErrorSignature(errors = []) {
+  return normalizeConnectionErrors(errors)
+    .map((error) => `${error.service}:${error.message}`)
+    .join('|');
+}
+
+function connectionErrorMessage(errors = []) {
+  const normalizedErrors = normalizeConnectionErrors(errors);
+  const services = normalizedErrors.map((error) => error.service).join(', ');
+  const details = normalizedErrors
+    .map((error) => `${error.service}: ${error.message}`)
+    .join('\n');
+  return [`Server non raggiungibile: ${services || 'servizio configurato'}.`, details].filter(Boolean).join('\n');
+}
+
+function shouldNotifyConnectionError(errors = []) {
+  const signature = connectionErrorSignature(errors);
+  return lastConnectionState !== 'error' || signature !== lastConnectionErrorSignature;
+}
+
+function notifyConnectionError(errors = []) {
+  const message = connectionErrorMessage(errors);
+  if (!shouldNotifyConnectionError(errors)) return;
   addLog('error', 'Errore connessione server', { message });
   showAppNotification('Tech Notify non comunica con il server', message);
 }
@@ -810,11 +1013,13 @@ function markConnectionOk() {
     showAppNotification('Tech Notify ricollegato', 'Connessione con il server ripristinata.');
   }
   lastConnectionState = 'ok';
+  lastConnectionErrorSignature = '';
 }
 
-function markConnectionError(message) {
-  notifyConnectionError(message);
+function markConnectionError(errors = []) {
+  notifyConnectionError(errors);
   lastConnectionState = 'error';
+  lastConnectionErrorSignature = connectionErrorSignature(errors);
 }
 
 async function fetchJsonWithTimeout(url, options = {}, timeoutMs = NOC_REQUEST_TIMEOUT_MS) {
@@ -856,38 +1061,47 @@ async function checkNotifications() {
     let summary = buildEffectiveSummary({}, null, ticketsToProcess, config);
     let emitted = 0;
     let calendarPayload = null;
+    const connectionErrors = [];
 
     if (isDeskConfigured(config)) {
-      const endpoint = buildEndpoint(config);
-      const { response, payload: deskPayload } = await fetchJsonWithTimeout(endpoint, {
-        headers: {
-          Authorization: `Basic ${Buffer.from(`${config.username}:${config.password}`).toString('base64')}`,
-          Accept: 'application/json',
-        },
-        cache: 'no-store',
-      });
-      if (!response.ok) throw new Error(deskPayload.message || `Errore HTTP ${response.status}`);
-      payload = deskPayload;
-
       try {
-        const dashboardResult = await fetchJsonWithTimeout(buildDashboardEndpoint(config), {
+        const endpoint = buildEndpoint(config);
+        const { response, payload: deskPayload } = await fetchJsonWithTimeout(endpoint, {
+          headers: {
+            Authorization: `Basic ${Buffer.from(`${config.username}:${config.password}`).toString('base64')}`,
+            Accept: 'application/json',
+          },
           cache: 'no-store',
         });
-        if (dashboardResult.response.ok) {
-          dashboardPayload = dashboardResult.payload;
+        if (!response.ok) throw new Error(deskPayload.message || `Errore HTTP ${response.status}`);
+        payload = deskPayload;
+
+        try {
+          const dashboardResult = await fetchJsonWithTimeout(buildDashboardEndpoint(config), {
+            cache: 'no-store',
+          });
+          if (dashboardResult.response.ok) {
+            dashboardPayload = dashboardResult.payload;
+          }
+        } catch (error) {
+          addLog('warning', 'Dashboard server non disponibile per il conteggio ticket assegnati', {
+            message: error.message || String(error),
+          });
         }
+
+        const notificationTickets = Array.isArray(payload.tickets) ? payload.tickets : [];
+        const dashboardTickets = Array.isArray(dashboardPayload?.tickets) ? dashboardPayload.tickets : [];
+        const dashboardAssignedTickets = assignedTickets(dashboardTickets, config);
+        ticketsToProcess = mergeTickets(notificationTickets, dashboardAssignedTickets);
+        summary = buildEffectiveSummary(payload.summary || {}, dashboardPayload, ticketsToProcess, config);
+        emitted = processTickets(ticketsToProcess, config);
       } catch (error) {
-        addLog('warning', 'Dashboard server non disponibile per il conteggio ticket assegnati', {
+        addLog('warning', 'Desk non disponibile', {
           message: error.message || String(error),
         });
+        summary.deskError = true;
+        connectionErrors.push({ service: 'Desk', message: error.message || String(error) });
       }
-
-      const notificationTickets = Array.isArray(payload.tickets) ? payload.tickets : [];
-      const dashboardTickets = Array.isArray(dashboardPayload?.tickets) ? dashboardPayload.tickets : [];
-      const dashboardAssignedTickets = assignedTickets(dashboardTickets, config);
-      ticketsToProcess = mergeTickets(notificationTickets, dashboardAssignedTickets);
-      summary = buildEffectiveSummary(payload.summary || {}, dashboardPayload, ticketsToProcess, config);
-      emitted = processTickets(ticketsToProcess, config);
     }
 
     if (isCalendarConfigured(config)) {
@@ -914,10 +1128,29 @@ async function checkNotifications() {
           message: error.message || String(error),
         });
         summary.calendarError = true;
-        if (!isDeskConfigured(config)) throw error;
+        connectionErrors.push({ service: 'Calendario', message: error.message || String(error) });
       }
     } else {
       summary.calendarEvents = 0;
+    }
+
+    if (connectionErrors.length > 0) {
+      const message = connectionErrorMessage(connectionErrors);
+      markConnectionError(connectionErrors);
+      sendStatus({
+        status: 'error',
+        message,
+        checkedAt: new Date().toISOString(),
+        summary,
+        stale: payload.stale,
+        staleReason: payload.staleReason,
+      });
+      return {
+        ...payload,
+        tickets: ticketsToProcess,
+        calendar: calendarPayload,
+        summary,
+      };
     }
 
     markConnectionOk();
@@ -1063,7 +1296,7 @@ function setupAutoUpdater() {
       'Aggiornamento Tech Notify disponibile',
       updateNotificationBody(message, releaseNotes),
       startUpdateFromNotification,
-      { actionLabel: 'Aggiorna', actionCloses: false },
+      { actionLabel: 'Aggiorna', actionCloses: false, variant: 'update' },
     );
   });
   autoUpdater.on('update-not-available', () => {
@@ -1159,9 +1392,7 @@ app.on('before-quit', () => {
   isQuitting = true;
   if (pollTimer) clearInterval(pollTimer);
   clearAutoUpdaterPolling();
-  for (const notificationWindow of persistentNotifications.values()) {
-    if (!notificationWindow.isDestroyed()) notificationWindow.close();
-  }
+  closeAllPersistentNotifications();
 });
 
 app.on('window-all-closed', () => {});
@@ -1240,6 +1471,7 @@ ipcMain.handle('persistent-notification:action', async (event, id) => {
   }
 });
 ipcMain.handle('persistent-notification:close', async (event, id) => closePersistentNotification(String(id)));
+ipcMain.handle('persistent-notification:expand-collapsed', async () => expandCollapsedPersistentNotifications());
 ipcMain.handle('updater:check-now', async () => runAutoUpdaterCheck('manual'));
 ipcMain.handle('updater:install', async () => installAvailableUpdate());
 ipcMain.handle('log:get', async () => eventLog);

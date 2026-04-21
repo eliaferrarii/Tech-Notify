@@ -110,6 +110,9 @@ function renderStatus(payload = {}) {
   if (payload.stale && payload.staleReason) {
     statusMessage.textContent = `${statusMessage.textContent} Cache server: ${payload.staleReason}`;
   }
+  if (summary.deskError) {
+    statusMessage.textContent = `${statusMessage.textContent} Desk non raggiungibile.`;
+  }
   if (summary.calendarError) {
     statusMessage.textContent = `${statusMessage.textContent} Calendario non raggiungibile.`;
   }
@@ -128,7 +131,9 @@ function renderUpdaterStatus(payload = {}) {
   updaterPanel.classList.remove('hidden');
   updaterPanel.classList.toggle('error', status === 'error');
   updaterMessage.textContent = payload.message || 'Aggiornamento in corso.';
-  updaterReleaseNotes.textContent = payload.releaseNotes ? `Cambi inclusi:\n${payload.releaseNotes}` : '';
+  updaterReleaseNotes.textContent = payload.releaseNotes
+    ? `Modifiche che verranno apportate:\n${payload.releaseNotes}`
+    : '';
   updaterReleaseNotes.classList.toggle('hidden', !payload.releaseNotes);
 
   const showProgress = status === 'available' || status === 'downloading' || status === 'downloaded';

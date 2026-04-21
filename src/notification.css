@@ -31,6 +31,15 @@ body {
   box-shadow: 0 18px 44px rgba(31, 41, 51, 0.22);
 }
 
+.notification-shell--bubble {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+}
+
 .notification-shell--critical {
   border-color: #991b1b;
   background: #b91c1c;
@@ -61,6 +70,52 @@ body {
   cursor: pointer;
 }
 
+.notification-bubble {
+  position: relative;
+  display: none;
+  width: 64px;
+  height: 64px;
+  border: 1px solid #bcc8d6;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #1f2933;
+  box-shadow: 0 18px 44px rgba(31, 41, 51, 0.24);
+  cursor: pointer;
+}
+
+.notification-shell--bubble .notification-bubble {
+  display: grid;
+  place-items: center;
+}
+
+.notification-bubble__icon {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.notification-bubble__count {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  display: grid;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.notification-shell--bubble .notification-content,
+.notification-shell--bubble .close-button {
+  display: none;
+}
+
 .eyebrow {
   color: #0f766e;
   font-size: 12px;
@@ -86,6 +141,10 @@ strong {
   line-height: 1.35;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+.notification-shell--update #notificationBody {
+  -webkit-line-clamp: 6;
 }
 
 .close-button {
